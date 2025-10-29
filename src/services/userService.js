@@ -1,5 +1,12 @@
-const { createUser, findUserByCPF, findUserById } = require("../db/queries/users.queries");
-const { hashPassword } = require("../utils/hashPassword");
+const {
+  createUser,
+  findUserByCPF,
+  findUserById,
+  findUserAuthById,
+  updateUserPassword
+} = require("../db/queries/users.queries");
+
+const { hashPassword, comparePassword } = require("../utils/hashPassword");
 const generateInitialPassword = require("../utils/generateInitialPassword");
 const { ROLE_ADMIN, ROLE_OPERADOR } = require("../utils/roleConstants");
 
@@ -7,14 +14,12 @@ const { ROLE_ADMIN, ROLE_OPERADOR } = require("../utils/roleConstants");
  * ADMIN cria novo usuário (ADMIN ou OPERADOR)
  */
 async function adminCreateUser({ nome, cpf, role }) {
-  // validar role recebida
   if (role !== ROLE_ADMIN && role !== ROLE_OPERADOR) {
     const err = new Error("Role inválida");
     err.status = 400;
     throw err;
   }
 
-  // checar duplicidade de CPF
   const existing = await findUserByCPF(cpf);
   if (existing) {
     const err = new Error("Já existe usuário com este CPF");
@@ -22,13 +27,9 @@ async function adminCreateUser({ nome, cpf, role }) {
     throw err;
   }
 
-  // gerar senha inicial
   const senhaInicial = generateInitialPassword();
-
-  // gerar hash
   const senhaHash = await hashPassword(senhaInicial);
 
-  // criar usuário no banco
   const newUserId = await createUser({
     nome,
     cpf,
@@ -63,7 +64,6 @@ async function getMyProfile(userId) {
     throw err;
   }
 
-  // retorna só dados não sensíveis
   return {
     id: u.id,
     nome: u.nome,
@@ -74,7 +74,47 @@ async function getMyProfile(userId) {
   };
 }
 
+/**
+ * Trocar a própria senha
+ * - valida senha atual
+ * - define senha nova
+ * - limpa flag precisa_trocar_senha
+ */
+async function changeMyPassword(userId, senhaAtual, senhaNova) {
+  // Buscar dados sensíveis do usuário
+  const u = await findUserAuthById(userId);
+
+  if (!u) {
+    const err = new Error("Usuário não encontrado");
+    err.status = 404;
+    throw err;
+  }
+
+  if (u.ativo === 0) {
+    const err = new Error("Usuário inativo");
+    err.status = 403;
+    throw err;
+  }
+
+  // conferir senha atual
+  const ok = await comparePassword(senhaAtual, u.senhaHash);
+  if (!ok) {
+    const err = new Error("Senha atual incorreta");
+    err.status = 401;
+    throw err;
+  }
+
+  // gerar hash da nova senha
+  const novaHash = await hashPassword(senhaNova);
+
+  // atualizar banco e marcar que já não precisa trocar senha
+  await updateUserPassword(userId, novaHash, false);
+
+  return { success: true };
+}
+
 module.exports = {
   adminCreateUser,
-  getMyProfile
+  getMyProfile,
+  changeMyPassword
 };

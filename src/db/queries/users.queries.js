@@ -51,8 +51,31 @@ async function findUserById(id) {
   return rows[0];
 }
 
+async function findUserAuthById(id) {
+  const [rows] = await db.query(
+    `SELECT id, senha_hash AS senhaHash,
+            precisa_trocar_senha AS precisaTrocarSenha,
+            ativo
+     FROM users
+     WHERE id = ? LIMIT 1`,
+    [id]
+  );
+  return rows[0];
+}
+
+async function updateUserPassword(userId, newHash, precisaTrocarSenha) {
+  await db.query(
+    `UPDATE users
+     SET senha_hash = ?, precisa_trocar_senha = ?
+     WHERE id = ?`,
+    [newHash, precisaTrocarSenha ? 1 : 0, userId]
+  );
+}
+
 module.exports = {
   findUserByCPF,
   createUser,
-  findUserById
+  findUserById,
+  findUserAuthById,
+  updateUserPassword
 };
