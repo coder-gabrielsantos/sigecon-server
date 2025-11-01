@@ -4,7 +4,6 @@ const db = require("../../config/db");
  * Busca usuário pelo CPF (para login e validação de duplicado)
  */
 async function findUserByCPF(cpf) {
-  console.log("findUserByCPF");
   const [rows] = await db.query(
     `SELECT id,
             nome,
