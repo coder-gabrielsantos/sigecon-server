@@ -28,9 +28,7 @@ app.use(express.json());
 /** Rotas */
 app.use("/auth", require("./routes/auth.routes"));
 app.use("/usuarios", require("./routes/users.routes"));
-// futuramente:
-// app.use("/contratos", require("./routes/contracts.routes"));
-// app.use("/ordens", require("./routes/orders.routes"));
+app.use("/contracts", require("./routes/contracts.routes"));
 
 /** Handler global de erros */
 app.use(errorHandler);
