@@ -1,7 +1,9 @@
 const {
   createContractFromExtract,
   listContracts,
-  getContractById
+  getContractById,
+  updateContract,
+  removeContract
 } = require("../services/contractService");
 
 /**
@@ -64,8 +66,30 @@ async function getContract(req, res, next) {
   }
 }
 
+async function updateContractHandler(req, res, next) {
+  try {
+    const { id } = req.params;
+    const updated = await updateContract(id, req.body);
+    return res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteContractHandler(req, res, next) {
+  try {
+    const { id } = req.params;
+    await removeContract(id);
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   importFromExtract,
   getContracts,
-  getContract
+  getContract,
+  updateContractHandler,
+  deleteContractHandler
 };

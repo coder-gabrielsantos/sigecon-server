@@ -115,9 +115,52 @@ async function findContractByIdWithItems(id) {
   return contract;
 }
 
+async function updateContractById(id, data) {
+  const fields = [];
+  const values = [];
+
+  if (data.number !== undefined) {
+    fields.push("number = ?");
+    values.push(data.number);
+  }
+  if (data.supplier !== undefined) {
+    fields.push("supplier = ?");
+    values.push(data.supplier);
+  }
+  if (data.totalAmount !== undefined) {
+    fields.push("total_amount = ?");
+    values.push(data.totalAmount);
+  }
+  if (data.startDate !== undefined) {
+    fields.push("start_date = ?");
+    values.push(data.startDate || null);
+  }
+  if (data.endDate !== undefined) {
+    fields.push("end_date = ?");
+    values.push(data.endDate || null);
+  }
+
+  if (!fields.length) return;
+
+  values.push(id);
+
+  await db.query(
+    `UPDATE contracts
+     SET ${fields.join(", ")}
+     WHERE id = ?`,
+    values
+  );
+}
+
+async function deleteContractById(id) {
+  await db.query("DELETE FROM contracts WHERE id = ?", [id]);
+}
+
 module.exports = {
   createContract,
   bulkInsertContractItems,
   findAllContractsSummary,
-  findContractByIdWithItems
+  findContractByIdWithItems,
+  updateContractById,
+  deleteContractById,
 };

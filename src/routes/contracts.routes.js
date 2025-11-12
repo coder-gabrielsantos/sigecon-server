@@ -2,19 +2,17 @@ const express = require("express");
 const {
   importFromExtract,
   getContracts,
-  getContract
+  getContract,
+  updateContractHandler,
+  deleteContractHandler,
 } = require("../controllers/contractController");
-// const auth = require("../middleware/authMiddleware"); // ativa depois
 
 const router = express.Router();
 
-// Lista contratos
-router.get("/", /* auth, */ getContracts);
-
-// Importa contrato a partir do resultado do extractor
-router.post("/import", /* auth, */ importFromExtract);
-
-// Detalhe de um contrato
-router.get("/:id", /* auth, */ getContract);
+router.get("/", getContracts);
+router.post("/import", importFromExtract);
+router.get("/:id", getContract);
+router.put("/:id", updateContractHandler);
+router.delete("/:id", deleteContractHandler);
 
 module.exports = router;
