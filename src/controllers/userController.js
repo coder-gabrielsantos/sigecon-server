@@ -1,7 +1,8 @@
 const {
   adminCreateUser,
   getMyProfile,
-  changeMyPassword
+  changeMyPassword,
+  changeMyName
 } = require("../services/userService");
 
 /**
@@ -46,16 +47,28 @@ async function getMeController(req, res, next) {
  */
 async function changePasswordController(req, res, next) {
   try {
+    console.log(req.body)
     const myUserId = req.user.id;
-    const { senha_atual, senha_nova } = req.body;
+    const { senhaAtual, senhaNova } = req.body;
 
-    if (!senha_atual || !senha_nova) {
+    if (!senhaAtual || !senhaNova) {
       return res.status(400).json({ error: "senha_atual e senha_nova são obrigatórias" });
     }
 
-    await changeMyPassword(myUserId, senha_atual, senha_nova);
+    await changeMyPassword(myUserId, senhaAtual, senhaNova);
 
     return res.status(200).json({ message: "Senha alterada com sucesso" });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function changeNameController(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { nome } = req.body;
+    const updatedProfile = await changeMyName(userId, nome);
+    return res.json(updatedProfile);
   } catch (err) {
     next(err);
   }
@@ -64,5 +77,6 @@ async function changePasswordController(req, res, next) {
 module.exports = {
   createUserController,
   getMeController,
-  changePasswordController
+  changePasswordController,
+  changeNameController
 };

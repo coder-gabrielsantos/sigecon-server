@@ -3,7 +3,8 @@ const {
   findUserByCPF,
   findUserById,
   findUserAuthById,
-  updateUserPassword
+  updateUserPassword,
+  updateUserName,
 } = require("../db/queries/users.queries");
 
 const { hashPassword, comparePassword } = require("../utils/hashPassword");
@@ -34,7 +35,7 @@ async function adminCreateUser({ nome, cpf, role }) {
     nome,
     cpf,
     senhaHash,
-    role
+    role,
   });
 
   return {
@@ -42,7 +43,7 @@ async function adminCreateUser({ nome, cpf, role }) {
     nome,
     cpf,
     role,
-    senha_inicial: senhaInicial
+    senha_inicial: senhaInicial,
   };
 }
 
@@ -70,7 +71,7 @@ async function getMyProfile(userId) {
     cpf: u.cpf,
     role: u.role,
     precisaTrocarSenha: !!u.precisaTrocarSenha,
-    ativo: !!u.ativo
+    ativo: !!u.ativo,
   };
 }
 
@@ -113,8 +114,41 @@ async function changeMyPassword(userId, senhaAtual, senhaNova) {
   return { success: true };
 }
 
+/**
+ * Atualiza o nome do próprio usuário autenticado
+ */
+async function changeMyName(userId, novoNome) {
+  const nomeLimpo = (novoNome || "").trim();
+
+  if (!nomeLimpo) {
+    const err = new Error("Nome não pode ser vazio");
+    err.status = 400;
+    throw err;
+  }
+
+  const u = await findUserById(userId);
+
+  if (!u) {
+    const err = new Error("Usuário não encontrado");
+    err.status = 404;
+    throw err;
+  }
+
+  if (u.ativo === 0) {
+    const err = new Error("Usuário inativo");
+    err.status = 403;
+    throw err;
+  }
+
+  await updateUserName(userId, nomeLimpo);
+
+  // retorna o perfil atualizado para o front
+  return getMyProfile(userId);
+}
+
 module.exports = {
   adminCreateUser,
   getMyProfile,
-  changeMyPassword
+  changeMyPassword,
+  changeMyName,
 };

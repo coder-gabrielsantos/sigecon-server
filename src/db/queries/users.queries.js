@@ -72,10 +72,23 @@ async function updateUserPassword(userId, newHash, precisaTrocarSenha) {
   );
 }
 
+/**
+ * Atualiza apenas o nome do usuário
+ */
+async function updateUserName(userId, nome) {
+  await db.query(
+    `UPDATE users
+     SET nome = ?
+     WHERE id = ?`,
+    [nome, userId]
+  );
+}
+
 module.exports = {
   findUserByCPF,
   createUser,
   findUserById,
   findUserAuthById,
-  updateUserPassword
+  updateUserPassword,
+  updateUserName,
 };

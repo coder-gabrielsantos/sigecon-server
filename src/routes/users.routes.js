@@ -4,7 +4,8 @@ const router = express.Router();
 const {
   createUserController,
   getMeController,
-  changePasswordController
+  changePasswordController,
+  changeNameController,
 } = require("../controllers/userController");
 
 const { requireAuth } = require("../middleware/auth");
@@ -20,17 +21,12 @@ router.post(
 );
 
 // pega perfil do próprio usuário autenticado
-router.get(
-  "/me",
-  requireAuth,
-  getMeController
-);
+router.get("/me", requireAuth, getMeController);
 
 // usuário autenticado troca a própria senha
-router.put(
-  "/me/senha",
-  requireAuth,
-  changePasswordController
-);
+router.put("/me/senha", requireAuth, changePasswordController);
+
+// usuário autenticado altera o próprio nome
+router.put("/me/nome", requireAuth, changeNameController);
 
 module.exports = router;
