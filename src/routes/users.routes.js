@@ -6,11 +6,20 @@ const {
   getMeController,
   changePasswordController,
   changeNameController,
+  listUsersController,
 } = require("../controllers/userController");
 
 const { requireAuth } = require("../middleware/auth");
 const { requireRole } = require("../middleware/role");
 const { ROLE_ADMIN } = require("../utils/roleConstants");
+
+// ADMIN lista todos os usuários
+router.get(
+  "/",
+  requireAuth,
+  requireRole(ROLE_ADMIN),
+  listUsersController
+);
 
 // ADMIN cria novo usuário (ADMIN ou OPERADOR)
 router.post(

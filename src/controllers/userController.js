@@ -2,7 +2,8 @@ const {
   adminCreateUser,
   getMyProfile,
   changeMyPassword,
-  changeMyName
+  changeMyName,
+  getAllUsersService,
 } = require("../services/userService");
 
 /**
@@ -15,7 +16,9 @@ async function createUserController(req, res, next) {
     const { nome, cpf, role } = req.body;
 
     if (!nome || !cpf || !role) {
-      return res.status(400).json({ error: "nome, cpf e role são obrigatórios" });
+      return res
+        .status(400)
+        .json({ error: "nome, cpf e role são obrigatórios" });
     }
 
     const novoUsuario = await adminCreateUser({ nome, cpf, role });
@@ -42,17 +45,19 @@ async function getMeController(req, res, next) {
 
 /**
  * PUT /usuarios/me/senha
- * BODY: { senha_atual, senha_nova }
+ * BODY: { senhaAtual, senhaNova }
  * Qualquer usuário autenticado
  */
 async function changePasswordController(req, res, next) {
   try {
-    console.log(req.body)
+    console.log(req.body);
     const myUserId = req.user.id;
     const { senhaAtual, senhaNova } = req.body;
 
     if (!senhaAtual || !senhaNova) {
-      return res.status(400).json({ error: "senha_atual e senha_nova são obrigatórias" });
+      return res
+        .status(400)
+        .json({ error: "senhaAtual e senhaNova são obrigatórias" });
     }
 
     await changeMyPassword(myUserId, senhaAtual, senhaNova);
@@ -63,6 +68,10 @@ async function changePasswordController(req, res, next) {
   }
 }
 
+/**
+ * PUT /usuarios/me/nome
+ * Qualquer usuário autenticado
+ */
 async function changeNameController(req, res, next) {
   try {
     const userId = req.user.id;
@@ -74,9 +83,23 @@ async function changeNameController(req, res, next) {
   }
 }
 
+/**
+ * GET /usuarios
+ * Apenas ADMIN
+ */
+async function listUsersController(req, res, next) {
+  try {
+    const users = await getAllUsersService();
+    return res.status(200).json(users);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createUserController,
   getMeController,
   changePasswordController,
-  changeNameController
+  changeNameController,
+  listUsersController,
 };

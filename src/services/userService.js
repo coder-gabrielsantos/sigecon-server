@@ -5,6 +5,7 @@ const {
   findUserAuthById,
   updateUserPassword,
   updateUserName,
+  listAllUsers,
 } = require("../db/queries/users.queries");
 
 const { hashPassword, comparePassword } = require("../utils/hashPassword");
@@ -82,7 +83,6 @@ async function getMyProfile(userId) {
  * - limpa flag precisa_trocar_senha
  */
 async function changeMyPassword(userId, senhaAtual, senhaNova) {
-  // Buscar dados sensíveis do usuário
   const u = await findUserAuthById(userId);
 
   if (!u) {
@@ -97,7 +97,6 @@ async function changeMyPassword(userId, senhaAtual, senhaNova) {
     throw err;
   }
 
-  // conferir senha atual
   const ok = await comparePassword(senhaAtual, u.senhaHash);
   if (!ok) {
     const err = new Error("Senha atual incorreta");
@@ -105,10 +104,8 @@ async function changeMyPassword(userId, senhaAtual, senhaNova) {
     throw err;
   }
 
-  // gerar hash da nova senha
   const novaHash = await hashPassword(senhaNova);
 
-  // atualizar banco e marcar que já não precisa trocar senha
   await updateUserPassword(userId, novaHash, false);
 
   return { success: true };
@@ -142,8 +139,21 @@ async function changeMyName(userId, novoNome) {
 
   await updateUserName(userId, nomeLimpo);
 
-  // retorna o perfil atualizado para o front
   return getMyProfile(userId);
+}
+
+/**
+ * Lista todos os usuários (para administração)
+ */
+async function getAllUsersService() {
+  const rows = await listAllUsers();
+  return rows.map((u) => ({
+    id: u.id,
+    nome: u.nome,
+    cpf: u.cpf,
+    role: u.role,
+    ativo: !!u.ativo,
+  }));
 }
 
 module.exports = {
@@ -151,4 +161,5 @@ module.exports = {
   getMyProfile,
   changeMyPassword,
   changeMyName,
+  getAllUsersService,
 };

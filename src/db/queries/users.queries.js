@@ -53,7 +53,8 @@ async function findUserById(id) {
 
 async function findUserAuthById(id) {
   const [rows] = await db.query(
-    `SELECT id, senha_hash AS senhaHash,
+    `SELECT id,
+            senha_hash           AS senhaHash,
             precisa_trocar_senha AS precisaTrocarSenha,
             ativo
      FROM users
@@ -66,7 +67,8 @@ async function findUserAuthById(id) {
 async function updateUserPassword(userId, newHash, precisaTrocarSenha) {
   await db.query(
     `UPDATE users
-     SET senha_hash = ?, precisa_trocar_senha = ?
+     SET senha_hash = ?,
+         precisa_trocar_senha = ?
      WHERE id = ?`,
     [newHash, precisaTrocarSenha ? 1 : 0, userId]
   );
@@ -84,6 +86,22 @@ async function updateUserName(userId, nome) {
   );
 }
 
+/**
+ * Lista todos os usuários (para tela de administração)
+ */
+async function listAllUsers() {
+  const [rows] = await db.query(
+    `SELECT id,
+            nome,
+            cpf,
+            role,
+            ativo
+     FROM users
+     ORDER BY nome ASC`
+  );
+  return rows;
+}
+
 module.exports = {
   findUserByCPF,
   createUser,
@@ -91,4 +109,5 @@ module.exports = {
   findUserAuthById,
   updateUserPassword,
   updateUserName,
+  listAllUsers,
 };
