@@ -2,22 +2,22 @@ const db = require("../../config/db");
 
 /**
  * Cria um contrato na tabela 'contracts'.
+ * Agora sem o campo total_amount.
  */
 async function createContract({
                                 number,
                                 supplier,
-                                totalAmount,
                                 pdfPath,
                                 startDate = null,
-                                endDate = null
+                                endDate = null,
                               }) {
   const [result] = await db.query(
     `
         INSERT INTO contracts
-            (number, supplier, total_amount, pdf_path, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (number, supplier, pdf_path, start_date, end_date)
+        VALUES (?, ?, ?, ?, ?)
     `,
-    [number, supplier, totalAmount || 0, pdfPath, startDate, endDate]
+    [number, supplier, pdfPath, startDate, endDate]
   );
 
   return result.insertId;
@@ -37,7 +37,7 @@ async function bulkInsertContractItems(items) {
     it.unit ?? null,
     it.quantity ?? null,
     it.unitPrice ?? null,
-    it.totalPrice ?? null
+    it.totalPrice ?? null,
   ]);
 
   await db.query(
@@ -52,16 +52,16 @@ async function bulkInsertContractItems(items) {
 
 /**
  * Lista contratos com resumo para a tela principal.
+ * Removido total_amount / remainingAmount, mantém apenas usedAmount.
  */
 async function findAllContractsSummary() {
   const [rows] = await db.query(
     `
-        SELECT c.id,
-               c.number                                            AS number,
-               c.supplier                                          AS supplier,
-               c.total_amount                                      AS totalAmount,
-               COALESCE(SUM(ci.total_price), 0)                    AS usedAmount,
-               (c.total_amount - COALESCE(SUM(ci.total_price), 0)) AS remainingAmount
+        SELECT
+            c.id,
+            c.number                           AS number,
+            c.supplier                         AS supplier,
+            COALESCE(SUM(ci.total_price), 0)   AS usedAmount
         FROM contracts c
                  LEFT JOIN contract_items ci ON ci.contract_id = c.id
         GROUP BY c.id
@@ -74,18 +74,19 @@ async function findAllContractsSummary() {
 
 /**
  * Busca contrato + itens.
+ * Removido total_amount (totalAmount) do SELECT.
  */
 async function findContractByIdWithItems(id) {
   const [contracts] = await db.query(
     `
-        SELECT id,
-               number       AS number,
-               supplier     AS supplier,
-               total_amount AS totalAmount,
-               start_date   AS startDate,
-               end_date     AS endDate,
-               pdf_path     AS pdfPath,
-               created_at   AS createdAt
+        SELECT
+            id,
+            number     AS number,
+            supplier   AS supplier,
+            start_date AS startDate,
+            end_date   AS endDate,
+            pdf_path   AS pdfPath,
+            created_at AS createdAt
         FROM contracts
         WHERE id = ? LIMIT 1
     `,
@@ -97,13 +98,14 @@ async function findContractByIdWithItems(id) {
 
   const [items] = await db.query(
     `
-        SELECT id,
-               item_no     AS itemNo,
-               description AS description,
-               unit        AS unit,
-               quantity    AS quantity,
-               unit_price  AS unitPrice,
-               total_price AS totalPrice
+        SELECT
+            id,
+            item_no     AS itemNo,
+            description AS description,
+            unit        AS unit,
+            quantity    AS quantity,
+            unit_price  AS unitPrice,
+            total_price AS totalPrice
         FROM contract_items
         WHERE contract_id = ?
         ORDER BY id ASC
@@ -115,6 +117,10 @@ async function findContractByIdWithItems(id) {
   return contract;
 }
 
+/**
+ * Atualiza contrato por ID.
+ * Removido suporte a totalAmount / total_amount.
+ */
 async function updateContractById(id, data) {
   const fields = [];
   const values = [];
@@ -126,10 +132,6 @@ async function updateContractById(id, data) {
   if (data.supplier !== undefined) {
     fields.push("supplier = ?");
     values.push(data.supplier);
-  }
-  if (data.totalAmount !== undefined) {
-    fields.push("total_amount = ?");
-    values.push(data.totalAmount);
   }
   if (data.startDate !== undefined) {
     fields.push("start_date = ?");
