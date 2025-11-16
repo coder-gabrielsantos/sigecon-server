@@ -1,5 +1,6 @@
 const {
   createContractFromExtract,
+  createEmptyContract,
   listContracts,
   getContractById,
   updateContract,
@@ -31,6 +32,18 @@ async function importFromExtract(req, res, next) {
 
     const contract = await createContractFromExtract(extractData, fileName);
 
+    return res.status(201).json(contract);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /contracts
+ */
+async function createEmptyContractHandler(req, res, next) {
+  try {
+    const contract = await createEmptyContract(req.body || {});
     return res.status(201).json(contract);
   } catch (err) {
     next(err);
@@ -111,6 +124,7 @@ async function upsertContractItemHandler(req, res, next) {
 
 module.exports = {
   importFromExtract,
+  createEmptyContractHandler,
   getContracts,
   getContract,
   updateContractHandler,

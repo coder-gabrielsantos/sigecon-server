@@ -178,7 +178,7 @@ async function findAllContractsSummary() {
         SELECT c.id,
                c.number                         AS number,
                c.supplier                       AS supplier,
-               COALESCE(SUM(ci.total_price), 0) AS usedAmount
+               COALESCE(SUM(ci.total_price), 0) AS totalAmount
         FROM contracts c
                  LEFT JOIN contract_items ci ON ci.contract_id = c.id
         GROUP BY c.id

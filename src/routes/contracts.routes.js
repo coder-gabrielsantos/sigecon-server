@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   importFromExtract,
+  createEmptyContractHandler,
   getContracts,
   getContract,
   updateContractHandler,
@@ -11,6 +12,7 @@ const {
 const router = express.Router();
 
 router.get("/", getContracts);
+router.post("/", createEmptyContractHandler);
 router.post("/import", importFromExtract);
 router.get("/:id", getContract);
 router.put("/:id", updateContractHandler);

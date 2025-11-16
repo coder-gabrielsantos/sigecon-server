@@ -176,6 +176,38 @@ async function createContractFromExtract(extractData, fileName) {
   return findContractByIdWithItems(contractId);
 }
 
+async function createEmptyContract(data = {}) {
+  const rawNumber =
+    data.number && String(data.number).trim().length
+      ? String(data.number).trim()
+      : null;
+
+  const number =
+    rawNumber ||
+    `Novo contrato ${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+
+  const supplier =
+    data.supplier !== undefined && data.supplier !== null
+      ? String(data.supplier).trim() || null
+      : null;
+
+  const startDate = data.startDate || null;
+  const endDate = data.endDate || null;
+
+  // IMPORTANTE: pdf_path não pode ser null na tabela
+  const pdfPath = "[CONTRATO EM BRANCO]";
+
+  const contractId = await createContract({
+    number,
+    supplier,
+    pdfPath,
+    startDate,
+    endDate,
+  });
+
+  return findContractByIdWithItems(contractId);
+}
+
 async function listContracts() {
   return findAllContractsSummary();
 }
@@ -356,6 +388,7 @@ async function upsertContractItem(contractId, payload = {}) {
 
 module.exports = {
   createContractFromExtract,
+  createEmptyContract,
   listContracts,
   getContractById,
   updateContract,
