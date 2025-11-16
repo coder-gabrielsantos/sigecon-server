@@ -21,6 +21,9 @@ function parseNumber(value) {
   let str = String(value).trim();
   if (!str) return null;
 
+  // remove símbolo de moeda e espaços
+  str = str.replace(/R\$/gi, "").replace(/\s+/g, "");
+
   // 1.234,56 -> 1234.56
   str = str.replace(/\./g, "").replace(/,/g, ".");
 
@@ -30,8 +33,6 @@ function parseNumber(value) {
 
 /**
  * Cria contrato + itens usando o resultado do microserviço extractor.
- * Não calcula nem envia totalAmount; esse campo deixou de existir no banco.
- * Aceita rows como OBJETO (formato atual) ou como ARRAY (fallback).
  */
 async function createContractFromExtract(extractData, fileName) {
   if (!extractData || !Array.isArray(extractData.rows)) {
@@ -59,7 +60,6 @@ async function createContractFromExtract(extractData, fileName) {
     let totalPrice = null;
 
     if (Array.isArray(row)) {
-      // Modo antigo: linhas como arrays, usando o índice de cada coluna
       const idxItem = columns.findIndex((c) => c.startsWith("ITEM"));
       const idxDesc = columns.findIndex(
         (c) => c.startsWith("DESCRI") || c.includes("DESCRIÇÃO")
@@ -88,7 +88,6 @@ async function createContractFromExtract(extractData, fileName) {
       unitPrice = idxVU >= 0 ? parseNumber(row[idxVU]) : null;
       totalPrice = idxVT >= 0 ? parseNumber(row[idxVT]) : null;
     } else if (row && typeof row === "object") {
-      // Formato atual: objeto com chaves amigáveis
       itemNo = parseNumber(row.item ?? row.ITEM);
       description =
         (
@@ -123,7 +122,6 @@ async function createContractFromExtract(extractData, fileName) {
       );
     }
 
-    // Pula linhas completamente vazias
     const hasData =
       (description && description.length > 0) ||
       quantity !== null ||
@@ -133,7 +131,7 @@ async function createContractFromExtract(extractData, fileName) {
     if (!hasData) continue;
 
     items.push({
-      contractId: null, // preenchido depois
+      contractId: null,
       itemNo,
       description,
       unit,
@@ -154,7 +152,6 @@ async function createContractFromExtract(extractData, fileName) {
   const supplier =
     extractData.supplier || extractData.fornecedor || null;
 
-  // 1) Cria contrato (sem totalAmount)
   const contractId = await createContract({
     number,
     supplier,
@@ -163,7 +160,6 @@ async function createContractFromExtract(extractData, fileName) {
     endDate: null,
   });
 
-  // 2) Insere itens com contractId preenchido
   const itemsWithContract = items.map((it) => ({
     ...it,
     contractId,
@@ -177,7 +173,6 @@ async function createContractFromExtract(extractData, fileName) {
     `ITENS EXTRAÍDOS: ${rows.length}, ITENS INSERIDOS: ${itemsWithContract.length}`
   );
 
-  // 3) Retorna contrato completo
   return findContractByIdWithItems(contractId);
 }
 
@@ -201,15 +196,14 @@ async function removeContract(id) {
 /**
  * Adiciona ou atualiza um item de contrato.
  *
- * Regras:
- * - Se payload tiver itemNo:
- *     - se existir (contract_id, item_no) -> atualiza
- *     - se não existir -> insere novo com esse itemNo
- * - Se NÃO tiver itemNo:
+ * - Se payload.itemNo existe:
+ *     - se existir (contract_id, item_no) -> atualiza usando dados atuais para recalcular total
+ *     - se não existir -> insere novo item com esse itemNo
+ * - Se payload.itemNo não existe:
  *     - insere novo item usando próximo item_no sequencial
  *
- * Sempre que quantidade e valor unitário forem informados,
- * total_price é recalculado no servidor como quantity * unitPrice.
+ * Sempre que quantidade OU valor unitário forem enviados,
+ * o total_price é recalculado usando (quantidade efetiva * unitPrice efetivo).
  */
 async function upsertContractItem(contractId, payload = {}) {
   const idNum = Number(contractId);
@@ -226,7 +220,7 @@ async function upsertContractItem(contractId, payload = {}) {
     throw err;
   }
 
-  // Normalização de campos
+  // itemNo (opcional)
   let itemNo =
     payload.itemNo !== undefined ? parseNumber(payload.itemNo) : null;
   if (itemNo !== null) {
@@ -248,38 +242,23 @@ async function upsertContractItem(contractId, payload = {}) {
       ? String(payload.unit || "").trim() || null
       : undefined;
 
-  const quantity =
+  const quantityFromPayload =
     payload.quantity !== undefined
       ? parseNumber(payload.quantity)
       : undefined;
 
-  const unitPrice =
+  const unitPriceFromPayload =
     payload.unitPrice !== undefined
       ? parseNumber(payload.unitPrice)
       : undefined;
 
-  // total calculado sempre que tivermos quantidade e valor unitário
-  let totalPrice;
-  if (
-    quantity !== undefined &&
-    unitPrice !== undefined &&
-    quantity !== null &&
-    unitPrice !== null
-  ) {
-    totalPrice = quantity * unitPrice;
-  } else if (payload.totalPrice !== undefined) {
-    // fallback (não é o caminho principal, mas mantemos por segurança)
-    totalPrice = parseNumber(payload.totalPrice);
-  }
+  const hasAnyField =
+    description !== undefined ||
+    unit !== undefined ||
+    quantityFromPayload !== undefined ||
+    unitPriceFromPayload !== undefined;
 
-  const data = {};
-  if (description !== undefined) data.description = description;
-  if (unit !== undefined) data.unit = unit;
-  if (quantity !== undefined) data.quantity = quantity;
-  if (unitPrice !== undefined) data.unitPrice = unitPrice;
-  if (totalPrice !== undefined) data.totalPrice = totalPrice;
-
-  if (!Object.keys(data).length) {
+  if (!hasAnyField) {
     const err = new Error(
       "Nenhum campo para adicionar ou atualizar no item."
     );
@@ -287,27 +266,88 @@ async function upsertContractItem(contractId, payload = {}) {
     throw err;
   }
 
-  // Se não veio itemNo, busca o próximo sequencial
+  // Se não veio itemNo, pega o próximo número sequencial
   if (!itemNo) {
     itemNo = await getNextItemNoForContract(idNum);
   }
-  data.itemNo = itemNo;
 
-  // Procura item existente
   const existing = await findContractItemByContractAndItemNo(
     idNum,
     itemNo
   );
 
+  // Monta base de dados (comum para update/insert)
+  const baseData = { itemNo };
+  if (description !== undefined) baseData.description = description;
+  if (unit !== undefined) baseData.unit = unit;
+
   if (existing) {
-    // Atualiza item existente
-    await updateContractItemById(existing.id, data);
+    // ---- ATUALIZAR ITEM EXISTENTE ----
+    const existingQuantity =
+      existing.quantity !== null && existing.quantity !== undefined
+        ? parseNumber(existing.quantity)
+        : null;
+    const existingUnitPrice =
+      existing.unitPrice !== null && existing.unitPrice !== undefined
+        ? parseNumber(existing.unitPrice)
+        : null;
+
+    // Quantidade e valor unitário efetivos (payload > banco)
+    const effectiveQuantity =
+      quantityFromPayload !== undefined
+        ? quantityFromPayload
+        : existingQuantity;
+    const effectiveUnitPrice =
+      unitPriceFromPayload !== undefined
+        ? unitPriceFromPayload
+        : existingUnitPrice;
+
+    if (effectiveQuantity !== null && effectiveQuantity !== undefined) {
+      baseData.quantity = effectiveQuantity;
+    }
+    if (effectiveUnitPrice !== null && effectiveUnitPrice !== undefined) {
+      baseData.unitPrice = effectiveUnitPrice;
+    }
+
+    // Se tivermos os dois, recalculamos SEMPRE o total
+    if (
+      effectiveQuantity !== null &&
+      effectiveQuantity !== undefined &&
+      effectiveUnitPrice !== null &&
+      effectiveUnitPrice !== undefined
+    ) {
+      baseData.totalPrice = effectiveQuantity * effectiveUnitPrice;
+    }
+
+    await updateContractItemById(existing.id, baseData);
   } else {
-    // Insere novo item
-    await insertContractItem({
+    // ---- INSERIR NOVO ITEM ----
+    const newQuantity =
+      quantityFromPayload !== undefined ? quantityFromPayload : null;
+    const newUnitPrice =
+      unitPriceFromPayload !== undefined ? unitPriceFromPayload : null;
+
+    const insertData = {
       contractId: idNum,
-      ...data,
-    });
+      itemNo,
+      description:
+        baseData.description !== undefined ? baseData.description : null,
+      unit: baseData.unit !== undefined ? baseData.unit : null,
+      quantity: newQuantity,
+      unitPrice: newUnitPrice,
+      totalPrice: null,
+    };
+
+    if (
+      newQuantity !== null &&
+      newQuantity !== undefined &&
+      newUnitPrice !== null &&
+      newUnitPrice !== undefined
+    ) {
+      insertData.totalPrice = newQuantity * newUnitPrice;
+    }
+
+    await insertContractItem(insertData);
   }
 
   // Retorna contrato completo atualizado

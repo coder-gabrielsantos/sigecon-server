@@ -84,13 +84,17 @@ async function insertContractItem({
 
 /**
  * Encontra item pelo par (contract_id, item_no).
+ * Agora traz também quantidade, unit_price e total_price.
  */
 async function findContractItemByContractAndItemNo(contractId, itemNo) {
   const [rows] = await db.query(
     `
         SELECT id,
                contract_id AS contractId,
-               item_no     AS itemNo
+               item_no     AS itemNo,
+               quantity    AS quantity,
+               unit_price  AS unitPrice,
+               total_price AS totalPrice
         FROM contract_items
         WHERE contract_id = ?
           AND item_no = ? LIMIT 1
