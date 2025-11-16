@@ -4,7 +4,7 @@ const {
   findAllContractsSummary,
   findContractByIdWithItems,
   updateContractById,
-  deleteContractById
+  deleteContractById,
 } = require("../db/queries/contracts.queries");
 
 /**
@@ -26,6 +26,7 @@ function parseNumber(value) {
 
 /**
  * Cria contrato + itens usando o resultado do microserviço extractor.
+ * Não calcula nem envia totalAmount; esse campo deixou de existir no banco.
  * Aceita rows como OBJETO (formato atual) ou como ARRAY (fallback).
  */
 async function createContractFromExtract(extractData, fileName) {
@@ -43,7 +44,6 @@ async function createContractFromExtract(extractData, fileName) {
   console.log("EXTRACT COLUMNS:", columns);
   console.log("EXTRACT FIRST ROW:", rows[0]);
 
-  let totalAmount = parseNumber(extractData.soma_valor_total) ?? null;
   const items = [];
 
   for (const row of rows) {
@@ -55,7 +55,7 @@ async function createContractFromExtract(extractData, fileName) {
     let totalPrice = null;
 
     if (Array.isArray(row)) {
-      // Modo antigo: linhas como arrays
+      // Modo antigo: linhas como arrays, usando o índice de cada coluna
       const idxItem = columns.findIndex((c) => c.startsWith("ITEM"));
       const idxDesc = columns.findIndex(
         (c) => c.startsWith("DESCRI") || c.includes("DESCRIÇÃO")
@@ -71,8 +71,7 @@ async function createContractFromExtract(extractData, fileName) {
         (c) => c.includes("VALOR_TOTAL") || c.includes("VALOR TOTAL")
       );
 
-      itemNo =
-        idxItem >= 0 ? parseNumber(row[idxItem]) : null;
+      itemNo = idxItem >= 0 ? parseNumber(row[idxItem]) : null;
       description =
         idxDesc >= 0 && row[idxDesc]
           ? String(row[idxDesc]).trim()
@@ -81,28 +80,24 @@ async function createContractFromExtract(extractData, fileName) {
         idxUnid >= 0 && row[idxUnid]
           ? String(row[idxUnid]).trim()
           : null;
-      quantity =
-        idxQtd >= 0 ? parseNumber(row[idxQtd]) : null;
-      unitPrice =
-        idxVU >= 0 ? parseNumber(row[idxVU]) : null;
-      totalPrice =
-        idxVT >= 0 ? parseNumber(row[idxVT]) : null;
+      quantity = idxQtd >= 0 ? parseNumber(row[idxQtd]) : null;
+      unitPrice = idxVU >= 0 ? parseNumber(row[idxVU]) : null;
+      totalPrice = idxVT >= 0 ? parseNumber(row[idxVT]) : null;
     } else if (row && typeof row === "object") {
       // Formato atual: objeto com chaves amigáveis
       itemNo = parseNumber(row.item ?? row.ITEM);
       description =
-        (row.descricao ??
+        (
+          row.descricao ??
           row.descrição ??
           row.DESCRICAO ??
           row.DESCRIÇÃO ??
-          "")
+          ""
+        )
           .toString()
           .trim() || null;
       unit =
-        (row.unid ??
-          row.UNID ??
-          row.unit ??
-          "")
+        (row.unid ?? row.UNID ?? row.unit ?? "")
           .toString()
           .trim() || null;
       quantity = parseNumber(
@@ -131,14 +126,7 @@ async function createContractFromExtract(extractData, fileName) {
       unitPrice !== null ||
       totalPrice !== null;
 
-    if (!hasData) {
-      continue;
-    }
-
-    // Se totalAmount não veio do extractor, soma pelos itens
-    if (totalAmount == null && totalPrice != null) {
-      totalAmount = (totalAmount || 0) + totalPrice;
-    }
+    if (!hasData) continue;
 
     items.push({
       contractId: null, // preenchido depois
@@ -147,7 +135,7 @@ async function createContractFromExtract(extractData, fileName) {
       unit,
       quantity,
       unitPrice,
-      totalPrice
+      totalPrice,
     });
   }
 
@@ -162,20 +150,19 @@ async function createContractFromExtract(extractData, fileName) {
   const supplier =
     extractData.supplier || extractData.fornecedor || null;
 
-  // 1) Cria contrato
+  // 1) Cria contrato (sem totalAmount)
   const contractId = await createContract({
     number,
     supplier,
-    totalAmount: totalAmount || 0,
     pdfPath: safeFileName,
     startDate: null,
-    endDate: null
+    endDate: null,
   });
 
   // 2) Insere itens com contractId preenchido
   const itemsWithContract = items.map((it) => ({
     ...it,
-    contractId
+    contractId,
   }));
 
   if (itemsWithContract.length) {
@@ -212,5 +199,5 @@ module.exports = {
   listContracts,
   getContractById,
   updateContract,
-  removeContract
+  removeContract,
 };
