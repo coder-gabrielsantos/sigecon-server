@@ -1,6 +1,10 @@
 const {
   createContract,
   bulkInsertContractItems,
+  insertContractItem,
+  findContractItemByContractAndItemNo,
+  getNextItemNoForContract,
+  updateContractItemById,
   findAllContractsSummary,
   findContractByIdWithItems,
   updateContractById,
@@ -194,10 +198,127 @@ async function removeContract(id) {
   await deleteContractById(id);
 }
 
+/**
+ * Adiciona ou atualiza um item de contrato.
+ *
+ * Regras:
+ * - Se payload tiver itemNo:
+ *     - se existir (contract_id, item_no) -> atualiza
+ *     - se não existir -> insere novo com esse itemNo
+ * - Se NÃO tiver itemNo:
+ *     - insere novo item usando próximo item_no sequencial
+ *
+ * Sempre que quantidade e valor unitário forem informados,
+ * total_price é recalculado no servidor como quantity * unitPrice.
+ */
+async function upsertContractItem(contractId, payload = {}) {
+  const idNum = Number(contractId);
+  if (!idNum || Number.isNaN(idNum)) {
+    const err = new Error("ID de contrato inválido.");
+    err.status = 400;
+    throw err;
+  }
+
+  const contract = await findContractByIdWithItems(idNum);
+  if (!contract) {
+    const err = new Error("Contrato não encontrado.");
+    err.status = 404;
+    throw err;
+  }
+
+  // Normalização de campos
+  let itemNo =
+    payload.itemNo !== undefined ? parseNumber(payload.itemNo) : null;
+  if (itemNo !== null) {
+    itemNo = Math.floor(itemNo);
+    if (!Number.isFinite(itemNo) || itemNo <= 0) {
+      const err = new Error("Número de item inválido.");
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const description =
+    payload.description !== undefined
+      ? String(payload.description || "").trim() || null
+      : undefined;
+
+  const unit =
+    payload.unit !== undefined
+      ? String(payload.unit || "").trim() || null
+      : undefined;
+
+  const quantity =
+    payload.quantity !== undefined
+      ? parseNumber(payload.quantity)
+      : undefined;
+
+  const unitPrice =
+    payload.unitPrice !== undefined
+      ? parseNumber(payload.unitPrice)
+      : undefined;
+
+  // total calculado sempre que tivermos quantidade e valor unitário
+  let totalPrice;
+  if (
+    quantity !== undefined &&
+    unitPrice !== undefined &&
+    quantity !== null &&
+    unitPrice !== null
+  ) {
+    totalPrice = quantity * unitPrice;
+  } else if (payload.totalPrice !== undefined) {
+    // fallback (não é o caminho principal, mas mantemos por segurança)
+    totalPrice = parseNumber(payload.totalPrice);
+  }
+
+  const data = {};
+  if (description !== undefined) data.description = description;
+  if (unit !== undefined) data.unit = unit;
+  if (quantity !== undefined) data.quantity = quantity;
+  if (unitPrice !== undefined) data.unitPrice = unitPrice;
+  if (totalPrice !== undefined) data.totalPrice = totalPrice;
+
+  if (!Object.keys(data).length) {
+    const err = new Error(
+      "Nenhum campo para adicionar ou atualizar no item."
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  // Se não veio itemNo, busca o próximo sequencial
+  if (!itemNo) {
+    itemNo = await getNextItemNoForContract(idNum);
+  }
+  data.itemNo = itemNo;
+
+  // Procura item existente
+  const existing = await findContractItemByContractAndItemNo(
+    idNum,
+    itemNo
+  );
+
+  if (existing) {
+    // Atualiza item existente
+    await updateContractItemById(existing.id, data);
+  } else {
+    // Insere novo item
+    await insertContractItem({
+      contractId: idNum,
+      ...data,
+    });
+  }
+
+  // Retorna contrato completo atualizado
+  return findContractByIdWithItems(idNum);
+}
+
 module.exports = {
   createContractFromExtract,
   listContracts,
   getContractById,
   updateContract,
   removeContract,
+  upsertContractItem,
 };

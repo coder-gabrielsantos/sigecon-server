@@ -51,33 +51,130 @@ async function bulkInsertContractItems(items) {
 }
 
 /**
+ * Insere um único item na tabela `contract_items`.
+ */
+async function insertContractItem({
+                                    contractId,
+                                    itemNo,
+                                    description,
+                                    unit,
+                                    quantity,
+                                    unitPrice,
+                                    totalPrice,
+                                  }) {
+  const [result] = await db.query(
+    `
+        INSERT INTO contract_items
+            (contract_id, item_no, description, unit, quantity, unit_price, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      contractId,
+      itemNo ?? null,
+      description ?? null,
+      unit ?? null,
+      quantity ?? null,
+      unitPrice ?? null,
+      totalPrice ?? null,
+    ]
+  );
+
+  return result.insertId;
+}
+
+/**
+ * Encontra item pelo par (contract_id, item_no).
+ */
+async function findContractItemByContractAndItemNo(contractId, itemNo) {
+  const [rows] = await db.query(
+    `
+        SELECT id,
+               contract_id AS contractId,
+               item_no     AS itemNo
+        FROM contract_items
+        WHERE contract_id = ?
+          AND item_no = ? LIMIT 1
+    `,
+    [contractId, itemNo]
+  );
+
+  return rows[0] || null;
+}
+
+/**
+ * Calcula o próximo item_no sequencial para um contrato.
+ */
+async function getNextItemNoForContract(contractId) {
+  const [rows] = await db.query(
+    `
+        SELECT COALESCE(MAX(item_no), 0) + 1 AS nextItemNo
+        FROM contract_items
+        WHERE contract_id = ?
+    `,
+    [contractId]
+  );
+
+  return (rows[0] && rows[0].nextItemNo) || 1;
+}
+
+/**
+ * Atualiza um item específico de contract_items por ID.
+ * Aceita objeto parcial: { itemNo?, description?, unit?, quantity?, unitPrice?, totalPrice? }
+ */
+async function updateContractItemById(id, data) {
+  const fields = [];
+  const values = [];
+
+  if (data.itemNo !== undefined) {
+    fields.push("item_no = ?");
+    values.push(data.itemNo);
+  }
+  if (data.description !== undefined) {
+    fields.push("description = ?");
+    values.push(data.description);
+  }
+  if (data.unit !== undefined) {
+    fields.push("unit = ?");
+    values.push(data.unit);
+  }
+  if (data.quantity !== undefined) {
+    fields.push("quantity = ?");
+    values.push(data.quantity);
+  }
+  if (data.unitPrice !== undefined) {
+    fields.push("unit_price = ?");
+    values.push(data.unitPrice);
+  }
+  if (data.totalPrice !== undefined) {
+    fields.push("total_price = ?");
+    values.push(data.totalPrice);
+  }
+
+  if (!fields.length) return;
+
+  values.push(id);
+
+  await db.query(
+    `
+        UPDATE contract_items
+        SET ${fields.join(", ")}
+        WHERE id = ?
+    `,
+    values
+  );
+}
+
+/**
  * Lista contratos com resumo para a tela principal.
- *
- * - totalAmount = soma dos total_price dos itens (ignorando linha de resumo
- *   "TOTAL DO CONTRATO", que normalmente não tem quantity nem unit_price).
- * - usedAmount = 0 por enquanto; futuramente será a soma das ordens emitidas.
+ * Removido total_amount / remainingAmount, mantém apenas usedAmount.
  */
 async function findAllContractsSummary() {
   const [rows] = await db.query(
     `
         SELECT c.id,
-               c.number   AS number,
-               c.supplier AS supplier,
-               COALESCE(
-                       SUM(
-                               CASE
-                                   -- ignora linha de resumo: sem quantidade e sem valor unitário,
-                                   -- mas com total_price preenchido
-                                   WHEN (ci.quantity IS NULL OR ci.quantity = 0)
-                                       AND (ci.unit_price IS NULL OR ci.unit_price = 0)
-                                       AND ci.total_price IS NOT NULL
-                                       THEN 0
-                                   ELSE ci.total_price
-                                   END
-                       ),
-                       0
-               )          AS totalAmount,
-               0          AS usedAmount
+               c.number                         AS number,
+               c.supplier                       AS supplier,
+               COALESCE(SUM(ci.total_price), 0) AS usedAmount
         FROM contracts c
                  LEFT JOIN contract_items ci ON ci.contract_id = c.id
         GROUP BY c.id
@@ -90,7 +187,7 @@ async function findAllContractsSummary() {
 
 /**
  * Busca contrato + itens.
- * Sem total_amount no SELECT; o total é derivado da soma dos itens.
+ * Removido total_amount (totalAmount) do SELECT.
  */
 async function findContractByIdWithItems(id) {
   const [contracts] = await db.query(
@@ -133,7 +230,7 @@ async function findContractByIdWithItems(id) {
 
 /**
  * Atualiza contrato por ID.
- * Sem suporte a totalAmount / total_amount (é derivado dos itens).
+ * Removido suporte a totalAmount / total_amount.
  */
 async function updateContractById(id, data) {
   const fields = [];
@@ -175,6 +272,10 @@ async function deleteContractById(id) {
 module.exports = {
   createContract,
   bulkInsertContractItems,
+  insertContractItem,
+  findContractItemByContractAndItemNo,
+  getNextItemNoForContract,
+  updateContractItemById,
   findAllContractsSummary,
   findContractByIdWithItems,
   updateContractById,

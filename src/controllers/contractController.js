@@ -3,7 +3,8 @@ const {
   listContracts,
   getContractById,
   updateContract,
-  removeContract
+  removeContract,
+  upsertContractItem,
 } = require("../services/contractService");
 
 /**
@@ -86,10 +87,33 @@ async function deleteContractHandler(req, res, next) {
   }
 }
 
+/**
+ * PUT /contracts/:id/items
+ * Body:
+ * {
+ *   itemNo?,        // se presente, tenta atualizar esse item_no
+ *   description?,
+ *   unit?,
+ *   quantity?,
+ *   unitPrice?,
+ *   totalPrice?     // opcional, mas normalmente ignorado pois o servidor recalc. o total
+ * }
+ */
+async function upsertContractItemHandler(req, res, next) {
+  try {
+    const { id } = req.params;
+    const updatedContract = await upsertContractItem(id, req.body || {});
+    return res.json(updatedContract);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   importFromExtract,
   getContracts,
   getContract,
   updateContractHandler,
-  deleteContractHandler
+  deleteContractHandler,
+  upsertContractItemHandler,
 };
