@@ -20,8 +20,22 @@ function parseNumber(value) {
   let str = String(value).trim();
   if (!str) return null;
 
+  // remove símbolo de moeda e espaços
   str = str.replace(/R\$/gi, "").replace(/\s+/g, "");
-  str = str.replace(/\./g, "").replace(/,/g, ".");
+
+  const hasComma = str.includes(",");
+  const hasDot = str.includes(".");
+
+  if (hasComma && hasDot) {
+    // Formato tipo "1.234,56" → remove pontos (milhar) e troca vírgula por ponto
+    str = str.replace(/\./g, "").replace(/,/g, ".");
+  } else if (hasComma) {
+    // Formato tipo "1234,56" → vírgula é decimal
+    str = str.replace(/,/g, ".");
+  } else {
+    // Só dígitos e (talvez) ponto → assume que o ponto já é decimal ("2737.96")
+    // NÃO remove os pontos aqui
+  }
 
   const num = Number(str);
   return Number.isNaN(num) ? null : num;
