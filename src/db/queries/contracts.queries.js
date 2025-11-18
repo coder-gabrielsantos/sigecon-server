@@ -186,10 +186,11 @@ async function findAllContractsSummary() {
                             FROM contract_items
                             WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
                             GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
-                 LEFT JOIN (SELECT contract_id,
-                                   SUM(total_amount) AS usedAmount
-                            FROM orders
-                            GROUP BY contract_id) o_tot ON o_tot.contract_id = c.id
+                 LEFT JOIN (SELECT o.contract_id,
+                                   SUM(oi.total_price) AS usedAmount
+                            FROM orders o
+                                     JOIN order_items oi ON oi.order_id = o.id
+                            GROUP BY o.contract_id) o_tot ON o_tot.contract_id = c.id
         ORDER BY c.created_at DESC
     `
   );
@@ -200,9 +201,9 @@ async function findAllContractsSummary() {
 /**
  * Busca contrato + itens.
  */
-async function findContractByIdWithItems(contractId) {
-  // contrato + totais
-  const [rows] = await db.query(
+async function findContractByIdWithItems(id) {
+  // contrato + totais (valor total, usado e saldo)
+  const [contracts] = await db.query(
     `
         SELECT c.id,
                c.number                                                        AS number,
@@ -220,34 +221,42 @@ async function findContractByIdWithItems(contractId) {
                             FROM contract_items
                             WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
                             GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
-                 LEFT JOIN (SELECT contract_id,
-                                   SUM(total_amount) AS usedAmount
-                            FROM orders
-                            GROUP BY contract_id) o_tot ON o_tot.contract_id = c.id
+                 LEFT JOIN (SELECT o.contract_id,
+                                   SUM(oi.total_price) AS usedAmount
+                            FROM orders o
+                                     JOIN order_items oi ON oi.order_id = o.id
+                            GROUP BY o.contract_id) o_tot ON o_tot.contract_id = c.id
         WHERE c.id = ? LIMIT 1
     `,
-    [contractId]
+    [id]
   );
 
-  if (!rows.length) return null;
-  const contract = rows[0];
+  const contract = contracts[0];
+  if (!contract) return null;
 
-  // itens do contrato (aqui mostramos todos, inclusive se o usuário criar algum sem item_no)
+  // itens + quantidade usada e disponível
   const [items] = await db.query(
     `
-        SELECT id,
-               contract_id AS contractId,
-               item_no     AS itemNo,
-               description,
-               unit,
-               quantity,
-               unit_price  AS unitPrice,
-               total_price AS totalPrice
-        FROM contract_items
-        WHERE contract_id = ?
-        ORDER BY item_no ASC, id ASC
+        SELECT ci.id,
+               ci.contract_id                                              AS contractId,
+               ci.item_no                                                  AS itemNo,
+               ci.description,
+               ci.unit,
+               ci.quantity,
+               ci.unit_price                                               AS unitPrice,
+               ci.total_price                                              AS totalPrice,
+               COALESCE(oi_used.totalUsed, 0)                              AS usedQuantity,
+               (COALESCE(ci.quantity, 0) - COALESCE(oi_used.totalUsed, 0)) AS availableQuantity
+        FROM contract_items ci
+                 LEFT JOIN (SELECT oi.contract_item_id,
+                                   SUM(oi.quantity) AS totalUsed
+                            FROM order_items oi
+                            GROUP BY oi.contract_item_id) oi_used
+                           ON oi_used.contract_item_id = ci.id
+        WHERE ci.contract_id = ?
+        ORDER BY ci.item_no ASC, ci.id ASC
     `,
-    [contractId]
+    [id]
   );
 
   contract.items = items;
