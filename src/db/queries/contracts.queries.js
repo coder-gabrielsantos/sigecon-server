@@ -176,12 +176,20 @@ async function findAllContractsSummary() {
   const [rows] = await db.query(
     `
         SELECT c.id,
-               c.number                         AS number,
-               c.supplier                       AS supplier,
-               COALESCE(SUM(ci.total_price), 0) AS totalAmount
+               c.number                                                        AS number,
+               c.supplier                                                      AS supplier,
+               COALESCE(ci_tot.totalAmount, 0)                                 AS totalAmount,
+               COALESCE(o_tot.usedAmount, 0)                                   AS usedAmount,
+               COALESCE(ci_tot.totalAmount, 0) - COALESCE(o_tot.usedAmount, 0) AS remainingAmount
         FROM contracts c
-                 LEFT JOIN contract_items ci ON ci.contract_id = c.id
-        GROUP BY c.id
+                 LEFT JOIN (SELECT contract_id,
+                                   SUM(total_price) AS totalAmount
+                            FROM contract_items
+                            GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
+                 LEFT JOIN (SELECT contract_id,
+                                   SUM(total_amount) AS usedAmount
+                            FROM orders
+                            GROUP BY contract_id) o_tot ON o_tot.contract_id = c.id
         ORDER BY c.created_at DESC
     `
   );
@@ -193,39 +201,53 @@ async function findAllContractsSummary() {
  * Busca contrato + itens.
  * Removido total_amount (totalAmount) do SELECT.
  */
-async function findContractByIdWithItems(id) {
-  const [contracts] = await db.query(
+async function findContractByIdWithItems(contractId) {
+  // contrato + totais
+  const [rows] = await db.query(
     `
-        SELECT id,
-               number     AS number,
-               supplier   AS supplier,
-               start_date AS startDate,
-               end_date   AS endDate,
-               pdf_path   AS pdfPath,
-               created_at AS createdAt
-        FROM contracts
-        WHERE id = ? LIMIT 1
+        SELECT c.id,
+               c.number                                                        AS number,
+               c.supplier                                                      AS supplier,
+               c.start_date                                                    AS startDate,
+               c.end_date                                                      AS endDate,
+               c.pdf_path                                                      AS pdfPath,
+               c.created_at                                                    AS createdAt,
+               COALESCE(ci_tot.totalAmount, 0)                                 AS totalAmount,
+               COALESCE(o_tot.usedAmount, 0)                                   AS usedAmount,
+               COALESCE(ci_tot.totalAmount, 0) - COALESCE(o_tot.usedAmount, 0) AS remainingAmount
+        FROM contracts c
+                 LEFT JOIN (SELECT contract_id,
+                                   SUM(total_price) AS totalAmount
+                            FROM contract_items
+                            GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
+                 LEFT JOIN (SELECT contract_id,
+                                   SUM(total_amount) AS usedAmount
+                            FROM orders
+                            GROUP BY contract_id) o_tot ON o_tot.contract_id = c.id
+        WHERE c.id = ? LIMIT 1
     `,
-    [id]
+    [contractId]
   );
 
-  const contract = contracts[0];
-  if (!contract) return null;
+  if (!rows.length) return null;
+  const contract = rows[0];
 
+  // itens do contrato
   const [items] = await db.query(
     `
         SELECT id,
+               contract_id AS contractId,
                item_no     AS itemNo,
-               description AS description,
-               unit        AS unit,
-               quantity    AS quantity,
+               description,
+               unit,
+               quantity,
                unit_price  AS unitPrice,
                total_price AS totalPrice
         FROM contract_items
         WHERE contract_id = ?
-        ORDER BY id ASC
+        ORDER BY item_no ASC, id ASC
     `,
-    [id]
+    [contractId]
   );
 
   contract.items = items;
