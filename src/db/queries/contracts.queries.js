@@ -170,7 +170,6 @@ async function updateContractItemById(id, data) {
 
 /**
  * Lista contratos com resumo para a tela principal.
- * Removido total_amount / remainingAmount, mantém apenas usedAmount.
  */
 async function findAllContractsSummary() {
   const [rows] = await db.query(
@@ -185,6 +184,7 @@ async function findAllContractsSummary() {
                  LEFT JOIN (SELECT contract_id,
                                    SUM(total_price) AS totalAmount
                             FROM contract_items
+                            WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
                             GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
                  LEFT JOIN (SELECT contract_id,
                                    SUM(total_amount) AS usedAmount
@@ -199,7 +199,6 @@ async function findAllContractsSummary() {
 
 /**
  * Busca contrato + itens.
- * Removido total_amount (totalAmount) do SELECT.
  */
 async function findContractByIdWithItems(contractId) {
   // contrato + totais
@@ -219,6 +218,7 @@ async function findContractByIdWithItems(contractId) {
                  LEFT JOIN (SELECT contract_id,
                                    SUM(total_price) AS totalAmount
                             FROM contract_items
+                            WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
                             GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
                  LEFT JOIN (SELECT contract_id,
                                    SUM(total_amount) AS usedAmount
@@ -232,7 +232,7 @@ async function findContractByIdWithItems(contractId) {
   if (!rows.length) return null;
   const contract = rows[0];
 
-  // itens do contrato
+  // itens do contrato (aqui mostramos todos, inclusive se o usuário criar algum sem item_no)
   const [items] = await db.query(
     `
         SELECT id,
@@ -256,7 +256,6 @@ async function findContractByIdWithItems(contractId) {
 
 /**
  * Atualiza contrato por ID.
- * Removido suporte a totalAmount / total_amount.
  */
 async function updateContractById(id, data) {
   const fields = [];

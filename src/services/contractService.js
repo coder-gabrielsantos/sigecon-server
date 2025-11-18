@@ -130,6 +130,26 @@ async function createContractFromExtract(extractData, fileName) {
 
     if (!hasData) continue;
 
+    // ---- NOVO: pular linha de "TOTAL GERAL" do extrator ----
+    const descUpper = (description || "").toString().trim().toUpperCase();
+    const looksLikeTotal =
+      descUpper.startsWith("TOTAL") ||
+      descUpper.includes("VALOR TOTAL");
+
+    const isSummaryRow =
+      (itemNo === null || itemNo === 0) &&
+      (!unit || unit.trim() === "") &&
+      (quantity === null || quantity === 0) &&
+      (unitPrice === null || unitPrice === 0) &&
+      totalPrice !== null &&
+      looksLikeTotal;
+
+    if (isSummaryRow) {
+      console.log("Ignorando linha de TOTAL do extrator:", row);
+      continue;
+    }
+    // --------------------------------------------------------
+
     items.push({
       contractId: null,
       itemNo,
@@ -184,7 +204,9 @@ async function createEmptyContract(data = {}) {
 
   const number =
     rawNumber ||
-    `Novo contrato ${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+    `Novo contrato ${new Date().getFullYear()}-${Date.now()
+      .toString()
+      .slice(-6)}`;
 
   const supplier =
     data.supplier !== undefined && data.supplier !== null

@@ -3,6 +3,7 @@ const {
   bulkInsertOrderItems,
   findAllOrdersSummary,
   findOrderByIdWithItems,
+  findUsedQuantitiesByContractId,
 } = require("../db/queries/orders.queries");
 
 const {
@@ -82,11 +83,27 @@ async function createOrder(payload = {}) {
       ? String(payload.justification || "").trim() || null
       : null;
 
-  // monta itens com base nos itens do contrato
+  // ------------------------------------------------------
+  // 1) Mapa de itens do contrato
+  // ------------------------------------------------------
   const itemsById = new Map(
     (contract.items || []).map((it) => [Number(it.id), it])
   );
 
+  // ------------------------------------------------------
+  // 2) Quantidade já consumida por item deste contrato
+  // ------------------------------------------------------
+  const usedRows = await findUsedQuantitiesByContractId(contractIdNum);
+  const usedMap = new Map(
+    usedRows.map((r) => [
+      Number(r.contractItemId),
+      parseNumber(r.totalUsed) || 0,
+    ])
+  );
+
+  // ------------------------------------------------------
+  // 3) Montar itens da ordem com validação de quantidade
+  // ------------------------------------------------------
   const orderItems = [];
   let totalAmount = 0;
 
@@ -99,6 +116,35 @@ async function createOrder(payload = {}) {
 
     const q = parseNumber(raw.quantity);
     if (!q || q <= 0) continue;
+
+    // quantidade definida no contrato para este item
+    const contractQuantity = parseNumber(baseItem.quantity);
+    if (contractQuantity === null || contractQuantity === undefined) {
+      const err = new Error(
+        `Item do contrato (ID ${contrItemId}) não possui quantidade definida.`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const alreadyUsed = usedMap.get(contrItemId) || 0;
+    const available = contractQuantity - alreadyUsed;
+
+    if (available <= 0) {
+      const err = new Error(
+        `Item do contrato (ID ${contrItemId}) já está totalmente consumido. Quantidade disponível: 0.`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    if (q > available) {
+      const err = new Error(
+        `Quantidade solicitada (${q}) excede o disponível (${available}) para o item do contrato (ID ${contrItemId}).`
+      );
+      err.status = 400;
+      throw err;
+    }
 
     const unitPrice = parseNumber(baseItem.unitPrice ?? baseItem.unit_price);
     const totalPrice = (q || 0) * (unitPrice || 0);
@@ -121,7 +167,9 @@ async function createOrder(payload = {}) {
     throw err;
   }
 
-  // cria ordem
+  // ------------------------------------------------------
+  // 4) Criar ordem e salvar itens
+  // ------------------------------------------------------
   const orderId = await insertOrder({
     contractId: contractIdNum,
     orderType,
@@ -132,7 +180,6 @@ async function createOrder(payload = {}) {
     totalAmount,
   });
 
-  // vincula ID da ordem aos itens e insere
   const itemsToInsert = orderItems.map((it) => ({
     orderId,
     ...it,
@@ -140,7 +187,6 @@ async function createOrder(payload = {}) {
 
   await bulkInsertOrderItems(itemsToInsert);
 
-  // retorna ordem completa
   const created = await findOrderByIdWithItems(orderId);
   return {
     ...created,
@@ -153,6 +199,7 @@ async function createOrder(payload = {}) {
 }
 
 async function listOrders() {
+  // já retorna totalAmount + totalItems + dados de contrato
   return findAllOrdersSummary();
 }
 
