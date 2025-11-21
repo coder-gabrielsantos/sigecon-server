@@ -4,19 +4,19 @@ const {
   createOrderHandler,
   listOrdersHandler,
   getOrderHandler,
-  downloadOrderPdfHandler, // NOVO
+  downloadOrderXlsxHandler,
 } = require("../controllers/orderController");
 
 // GET /orders -> lista ordens
 router.get("/", listOrdersHandler);
 
-// PDF da ordem
-router.get("/:id/pdf", downloadOrderPdfHandler); // NOVO
+// POST /orders -> cria nova ordem
+router.post("/", createOrderHandler);
 
 // GET /orders/:id -> detalhes da ordem
 router.get("/:id", getOrderHandler);
 
-// POST /orders -> cria nova ordem
-router.post("/", createOrderHandler);
+// GET /orders/:id/xlsx -> download planilha preenchida
+router.get("/:id/xlsx", downloadOrderXlsxHandler);
 
 module.exports = router;

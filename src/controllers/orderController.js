@@ -2,9 +2,9 @@ const {
   createOrder,
   listOrders,
   getOrderById,
-  getOrderWithContractForPdf,
+  getOrderWithContract,
 } = require("../services/orderService");
-const { createOrderPdf } = require("../pdf/orderPdfGenerator");
+const { generateOrderWorkbook } = require("../utils/orderGenerator");
 
 async function createOrderHandler(req, res, next) {
   try {
@@ -40,25 +40,33 @@ async function getOrderHandler(req, res, next) {
  * - Gera o PDF usando o gerador separado
  * - Faz o streaming do PDF para o cliente
  */
-async function downloadOrderPdfHandler(req, res, next) {
+async function downloadOrderXlsxHandler(req, res, next) {
   try {
     const { id } = req.params;
 
-    const { order, contract } = await getOrderWithContractForPdf(id);
+    // 1) Busca ordem + contrato + itens
+    const { order, contract } = await getOrderWithContract(id);
 
-    const doc = createOrderPdf({ order, contract });
+    // 2) Gera workbook baseado no template
+    const workbook = await generateOrderWorkbook({ order, contract });
 
-    const safeOrderNumber = order.orderNumber || order.id || "ordem";
-    const fileName = `ordem-${safeOrderNumber}.pdf`;
+    // 3) Configura headers para download
+    const safeNumber =
+      order.orderNumber || order.id || `ordem_${id}`;
+    const filename = `ordem_${safeNumber}.xlsx`;
 
-    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${fileName}"`
+      `attachment; filename="${filename}"`
     );
 
-    doc.pipe(res);
-    doc.end();
+    // 4) Escreve o arquivo direto na response
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (err) {
     next(err);
   }
@@ -68,5 +76,5 @@ module.exports = {
   createOrderHandler,
   listOrdersHandler,
   getOrderHandler,
-  downloadOrderPdfHandler,
+  downloadOrderXlsxHandler,
 };
