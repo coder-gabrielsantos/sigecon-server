@@ -227,8 +227,32 @@ async function getOrderById(id) {
   return order;
 }
 
+async function getOrderWithContractForPdf(id) {
+  const order = await getOrderById(id); // já trata 404
+
+  const contractId = order.contractId;
+  if (!contractId) {
+    const err = new Error("Ordem não está vinculada a um contrato.");
+    err.status = 400;
+    throw err;
+  }
+
+  const contract = await findContractByIdWithItems(contractId);
+  if (!contract) {
+    const err = new Error("Contrato vinculado à ordem não foi encontrado.");
+    err.status = 404;
+    throw err;
+  }
+
+  // Itens já vêm em order.items, mas garantimos estrutura
+  order.items = order.items || [];
+
+  return { order, contract };
+}
+
 module.exports = {
   createOrder,
   listOrders,
   getOrderById,
+  getOrderWithContractForPdf,
 };
