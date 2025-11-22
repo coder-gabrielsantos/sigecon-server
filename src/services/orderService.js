@@ -42,6 +42,65 @@ function parseNumber(value) {
 }
 
 /**
+ * Enriquecer itens da ordem com o itemNo do item do contrato.
+ *
+ * - Usa order.contractId para buscar o contrato (caso não seja passado).
+ * - Para cada item da ordem, se não tiver itemNo, usa o itemNo/item_no
+ *   do item do contrato com o mesmo contractItemId.
+ */
+async function enrichOrderItemsWithItemNo(order, existingContract) {
+  if (
+    !order ||
+    !order.contractId ||
+    !Array.isArray(order.items) ||
+    order.items.length === 0
+  ) {
+    return order;
+  }
+
+  // se já recebemos o contrato, reaproveita
+  let contract = existingContract;
+  if (!contract) {
+    contract = await findContractByIdWithItems(order.contractId);
+  }
+  if (!contract || !Array.isArray(contract.items)) {
+    return order;
+  }
+
+  const contractItemsById = new Map(
+    contract.items.map((ci) => [Number(ci.id), ci])
+  );
+
+  const newItems = order.items.map((item) => {
+    // se já veio itemNo do banco, mantém
+    if (item.itemNo !== undefined && item.itemNo !== null) {
+      return item;
+    }
+
+    const contractItemId = item.contractItemId || item.contract_item_id;
+    const base =
+      contractItemId != null
+        ? contractItemsById.get(Number(contractItemId))
+        : null;
+
+    const itemNo =
+      base && (base.itemNo !== undefined || base.item_no !== undefined)
+        ? base.itemNo ?? base.item_no
+        : null;
+
+    return {
+      ...item,
+      itemNo,
+    };
+  });
+
+  return {
+    ...order,
+    items: newItems,
+  };
+}
+
+/**
  * Cria uma ordem a partir de um contrato e itens selecionados.
  *
  * payload:
@@ -201,7 +260,10 @@ async function createOrder(payload = {}) {
 
   await bulkInsertOrderItems(itemsToInsert);
 
-  const created = await findOrderByIdWithItems(orderId);
+  let created = await findOrderByIdWithItems(orderId);
+  // garante itemNo também logo após criar
+  created = await enrichOrderItemsWithItemNo(created, contract);
+
   return {
     ...created,
     contract: {
@@ -218,12 +280,16 @@ async function listOrders() {
 }
 
 async function getOrderById(id) {
-  const order = await findOrderByIdWithItems(id);
+  let order = await findOrderByIdWithItems(id);
   if (!order) {
     const err = new Error("Ordem não encontrada.");
     err.status = 404;
     throw err;
   }
+
+  // preenche itemNo para cada item, se possível
+  order = await enrichOrderItemsWithItemNo(order);
+
   return order;
 }
 
@@ -235,7 +301,7 @@ async function getOrderWithContract(id) {
     throw err;
   }
 
-  const order = await findOrderByIdWithItems(orderId);
+  let order = await findOrderByIdWithItems(orderId);
   if (!order) {
     const err = new Error("Ordem não encontrada.");
     err.status = 404;
@@ -254,6 +320,9 @@ async function getOrderWithContract(id) {
     err.status = 404;
     throw err;
   }
+
+  // reaproveita o contrato já carregado pra preencher os itemNo
+  order = await enrichOrderItemsWithItemNo(order, contract);
 
   return { order, contract };
 }
