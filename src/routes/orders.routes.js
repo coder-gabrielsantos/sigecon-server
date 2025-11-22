@@ -17,6 +17,6 @@ router.post("/", createOrderHandler);
 router.get("/:id", getOrderHandler);
 
 // GET /orders/:id/xlsx -> download planilha preenchida
-router.get("/:id/xlsx", downloadOrderXlsxHandler);
+router.post("/:id/xlsx", downloadOrderXlsxHandler);
 
 module.exports = router;

@@ -12,7 +12,7 @@ function formatDateToBRDots(value) {
   return `${dd}.${mm}.${yyyy}`;
 }
 
-async function generateOrderWorkbook({ order, contract }) {
+async function generateOrderWorkbook({ order, contract, extras = {} }) {
   const workbook = new ExcelJS.Workbook();
 
   const templatePath = path.join(
@@ -27,24 +27,75 @@ async function generateOrderWorkbook({ order, contract }) {
   const sheet =
     workbook.getWorksheet("001") || workbook.worksheets[0];
 
-  // Data (I5)
+  // --------- EXTRAS DO FORM (com defaults) ---------
+  const {
+    orderTypeText = order.orderType || "",
+    deText = "SECRETARIA MUNICIPAL DE GESTÃO E ORÇAMENTO.",
+    paraText = "05.281.738/0001-98",
+    nomeRazao = "S. T. BORBA",
+    endereco = "RUA DEP. RAIMUNDO BACELAR,421, CENTRO, COELHO NETO-MA",
+    celularTexto = "CONTRATO Nº 009 DE 09 DE JANEIRO DE 2025.",
+    justificativaCampo = order.justification || "",
+    tiposDespesaSelecionados = [],
+    modalidadesSelecionadas = [],
+  } = extras || {};
+
+  // --------- CAMPOS PRINCIPAIS ---------
+
+  // Tipo de ordem – célula 4 E–I
+  sheet.getCell("E4").value = orderTypeText;
+
+  // Data – célula 5 I
   sheet.getCell("I5").value = formatDateToBRDots(order.issueDate);
 
-  // Nome / Razão Social (C18)
-  sheet.getCell("C18").value =
-    contract.supplier || contract.fornecedor || "";
+  // De / Para – linha 8
+  sheet.getCell("C8").value = deText;
+  sheet.getCell("F8").value = paraText;
 
-  // Contrato (E21)
-  const contractNumber =
-    contract.number || contract.numero || contract.id || "";
-  sheet.getCell("E21").value = contractNumber
-    ? `CONTRATO Nº ${contractNumber}`
-    : "";
+  // Nome / razão social – 18 CDEF
+  sheet.getCell("C18").value = nomeRazao;
 
-  // Justificativa (C44)
-  sheet.getCell("C44").value = order.justification || "";
+  // Endereço – 20/21 CD
+  sheet.getCell("C20").value = endereco;
 
-  // Tabela de itens: linhas 24–40, colunas C,D,F,G,H,I
+  // Texto extra (20 EF)
+  sheet.getCell("E20").value = celularTexto;
+
+  // Mesmo nome na seção de assinatura – 46 CD
+  sheet.getCell("C46").value = nomeRazao;
+
+  // Justificativa / Finalidade / Período – 44 CDEFGHI
+  sheet.getCell("C44").value = justificativaCampo;
+
+  // --------- TIPOS DE DESPESA (11–13 HI) ---------
+  const expenseRows = [11, 12, 13];
+
+  expenseRows.forEach((row) => {
+    sheet.getCell(`H${row}`).value = null;
+  });
+
+  tiposDespesaSelecionados
+    .slice(0, expenseRows.length)
+    .forEach((text, idx) => {
+      const row = expenseRows[idx];
+      sheet.getCell(`H${row}`).value = text;
+    });
+
+  // --------- MODALIDADES (17–21 HI) ---------
+  const modalityRows = [17, 18, 19, 20, 21];
+
+  modalityRows.forEach((row) => {
+    sheet.getCell(`H${row}`).value = null;
+  });
+
+  modalidadesSelecionadas
+    .slice(0, modalityRows.length)
+    .forEach((text, idx) => {
+      const row = modalityRows[idx];
+      sheet.getCell(`H${row}`).value = text;
+    });
+
+  // --------- ITENS (24–40) ---------
   const START_ROW = 24;
   const MAX_ROWS = 17;
 
@@ -57,11 +108,11 @@ async function generateOrderWorkbook({ order, contract }) {
 
   const items = Array.isArray(order.items) ? order.items : [];
 
-  items.slice(0, MAX_ROWS).forEach((item, index) => {
-    const rowIndex = START_ROW + index;
+  items.slice(0, MAX_ROWS).forEach((item, idx) => {
+    const rowIndex = START_ROW + idx;
 
     const itemNo =
-      item.itemNo ?? item.item_no ?? item.id ?? index + 1;
+      item.itemNo ?? item.item_no ?? item.id ?? idx + 1;
     const description = item.description || "";
     const unit = item.unit || "";
     const quantity = Number(item.quantity ?? 0) || 0;
@@ -77,8 +128,6 @@ async function generateOrderWorkbook({ order, contract }) {
     sheet.getCell(`H${rowIndex}`).value = unitPrice;
     sheet.getCell(`I${rowIndex}`).value = totalPrice;
   });
-
-  // TOTAL em I41 já deve ter fórmula no template.
 
   return workbook;
 }

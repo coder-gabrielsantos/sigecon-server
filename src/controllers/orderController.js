@@ -44,15 +44,23 @@ async function downloadOrderXlsxHandler(req, res, next) {
   try {
     const { id } = req.params;
 
-    // 1) Busca ordem + contrato + itens
+    // só pra conferir se está vindo mesmo
+    console.log("BODY XLSX >>>", req.body);
+
+    // 1) ordem + contrato + itens
     const { order, contract } = await getOrderWithContract(id);
 
-    // 2) Gera workbook baseado no template
-    const workbook = await generateOrderWorkbook({ order, contract });
+    // 2) extras vindos do form
+    const extras = req.body || {};
 
-    // 3) Configura headers para download
-    const safeNumber =
-      order.orderNumber || order.id || `ordem_${id}`;
+    // 3) gera workbook com extras
+    const workbook = await generateOrderWorkbook({
+      order,
+      contract,
+      extras,
+    });
+
+    const safeNumber = order.orderNumber || order.id || `ordem_${id}`;
     const filename = `ordem_${safeNumber}.xlsx`;
 
     res.setHeader(
@@ -64,7 +72,6 @@ async function downloadOrderXlsxHandler(req, res, next) {
       `attachment; filename="${filename}"`
     );
 
-    // 4) Escreve o arquivo direto na response
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {

@@ -228,18 +228,27 @@ async function getOrderById(id) {
 }
 
 async function getOrderWithContract(id) {
-  const order = await getOrderById(id); // usa a função já existente
-
-  const contractIdNum = Number(order.contractId);
-  if (!contractIdNum || Number.isNaN(contractIdNum)) {
-    const err = new Error(
-      "Ordem não possui contrato vinculado ou ID inválido."
-    );
+  const orderId = Number(id);
+  if (!orderId || Number.isNaN(orderId)) {
+    const err = new Error("ID de ordem inválido.");
     err.status = 400;
     throw err;
   }
 
-  const contract = await findContractByIdWithItems(contractIdNum);
+  const order = await findOrderByIdWithItems(orderId);
+  if (!order) {
+    const err = new Error("Ordem não encontrada.");
+    err.status = 404;
+    throw err;
+  }
+
+  if (!order.contractId) {
+    const err = new Error("Ordem não possui contrato vinculado.");
+    err.status = 400;
+    throw err;
+  }
+
+  const contract = await findContractByIdWithItems(order.contractId);
   if (!contract) {
     const err = new Error("Contrato vinculado à ordem não foi encontrado.");
     err.status = 404;
