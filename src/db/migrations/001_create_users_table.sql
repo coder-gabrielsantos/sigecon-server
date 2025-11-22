@@ -5,8 +5,8 @@ USE sigecon;
 -- TABELA DE USUÁRIOS
 -- ======================
 CREATE TABLE IF NOT EXISTS users (
-                                     id INT AUTO_INCREMENT PRIMARY KEY,
-                                     nome VARCHAR(120) NOT NULL,
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(120) NOT NULL,
     cpf VARCHAR(14) NOT NULL UNIQUE,
     senha_hash VARCHAR(255) NOT NULL,
     role ENUM('ADMIN', 'OPERADOR') NOT NULL DEFAULT 'OPERADOR',
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     );
 
--- Usuário admin inicial
+-- Usuário admin inicial (seed)
 INSERT INTO users (nome, cpf, senha_hash, role, precisa_trocar_senha, ativo)
 VALUES (
            'Administrador Inicial',
@@ -25,4 +25,4 @@ VALUES (
            'ADMIN',
            0,
            1
-       );
+);
