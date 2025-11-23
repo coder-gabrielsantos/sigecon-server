@@ -84,8 +84,30 @@ async function getContract(req, res, next) {
 async function updateContractHandler(req, res, next) {
   try {
     const { id } = req.params;
+
+    const isAdmin = req.user && req.user.role === "ADMIN";
+
+    // Se não for admin -> só permitir alterar "quantity"
+    if (!isAdmin) {
+      const allowed = {};
+
+      // Só copia quantity se existir no body
+      if (typeof req.body.quantity !== "undefined") {
+        allowed.quantity = req.body.quantity;
+      } else {
+        return res.status(403).json({
+          error: "Somente administradores podem atualizar outros campos além de 'quantidade'."
+        });
+      }
+
+      const updated = await updateContract(id, allowed);
+      return res.json(updated);
+    }
+
+    // ADMIN -> pode atualizar tudo
     const updated = await updateContract(id, req.body);
     return res.json(updated);
+
   } catch (err) {
     next(err);
   }
