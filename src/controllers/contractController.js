@@ -81,6 +81,11 @@ async function getContract(req, res, next) {
   }
 }
 
+/**
+ * PUT /contracts/:id
+ * - ADMIN pode atualizar todos os campos
+ * - Não-admin só consegue enviar "quantity" (regra que você definiu)
+ */
 async function updateContractHandler(req, res, next) {
   try {
     const { id } = req.params;
@@ -96,7 +101,8 @@ async function updateContractHandler(req, res, next) {
         allowed.quantity = req.body.quantity;
       } else {
         return res.status(403).json({
-          error: "Somente administradores podem atualizar outros campos além de 'quantidade'."
+          error:
+            "Somente administradores podem atualizar outros campos além de 'quantidade'.",
         });
       }
 
@@ -107,7 +113,6 @@ async function updateContractHandler(req, res, next) {
     // ADMIN -> pode atualizar tudo
     const updated = await updateContract(id, req.body);
     return res.json(updated);
-
   } catch (err) {
     next(err);
   }

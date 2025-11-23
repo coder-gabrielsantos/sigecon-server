@@ -9,8 +9,12 @@ const {
   upsertContractItemHandler,
   deleteContractItemHandler,
 } = require("../controllers/contractController");
+const { requireAuth } = require("../middleware/auth"); // ⬅ middleware de auth
 
 const router = express.Router();
+
+// Todas as rotas de contratos exigem usuário autenticado
+router.use(requireAuth);
 
 router.get("/", getContracts);
 router.post("/", createEmptyContractHandler);
