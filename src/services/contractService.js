@@ -9,6 +9,7 @@ const {
   findContractByIdWithItems,
   updateContractById,
   deleteContractById,
+  deleteContractItemById,
 } = require("../db/queries/contracts.queries");
 
 /**
@@ -419,6 +420,44 @@ async function upsertContractItem(contractId, payload = {}) {
   return findContractByIdWithItems(idNum);
 }
 
+/**
+ * Remove um item específico de um contrato dado o itemNo.
+ * Retorna o contrato atualizado após a remoção.
+ */
+async function deleteContractItem(contractId, itemNoRaw) {
+  const idNum = Number(contractId);
+  if (!idNum || Number.isNaN(idNum)) {
+    const err = new Error("ID de contrato inválido.");
+    err.status = 400;
+    throw err;
+  }
+
+  const itemNo = parseNumber(itemNoRaw);
+  if (!itemNo || !Number.isFinite(itemNo) || itemNo <= 0) {
+    const err = new Error("Número de item inválido.");
+    err.status = 400;
+    throw err;
+  }
+
+  const contract = await findContractByIdWithItems(idNum);
+  if (!contract) {
+    const err = new Error("Contrato não encontrado.");
+    err.status = 404;
+    throw err;
+  }
+
+  const existing = await findContractItemByContractAndItemNo(idNum, itemNo);
+  if (!existing) {
+    const err = new Error("Item não encontrado para este contrato.");
+    err.status = 404;
+    throw err;
+  }
+
+  await deleteContractItemById(existing.id);
+
+  return findContractByIdWithItems(idNum);
+}
+
 module.exports = {
   createContractFromExtract,
   createEmptyContract,
@@ -427,4 +466,5 @@ module.exports = {
   updateContract,
   removeContract,
   upsertContractItem,
+  deleteContractItem,
 };

@@ -6,6 +6,7 @@ const {
   updateContract,
   removeContract,
   upsertContractItem,
+  deleteContractItem,
 } = require("../services/contractService");
 
 /**
@@ -122,6 +123,20 @@ async function upsertContractItemHandler(req, res, next) {
   }
 }
 
+/**
+ * DELETE /contracts/:id/items/:itemNo
+ * Remove um item do contrato e retorna o contrato atualizado.
+ */
+async function deleteContractItemHandler(req, res, next) {
+  try {
+    const { id, itemNo } = req.params;
+    const updatedContract = await deleteContractItem(id, itemNo);
+    return res.json(updatedContract);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   importFromExtract,
   createEmptyContractHandler,
@@ -130,4 +145,5 @@ module.exports = {
   updateContractHandler,
   deleteContractHandler,
   upsertContractItemHandler,
+  deleteContractItemHandler,
 };

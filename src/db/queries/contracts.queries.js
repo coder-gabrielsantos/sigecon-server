@@ -169,6 +169,20 @@ async function updateContractItemById(id, data) {
 }
 
 /**
+ * Remove um item de contract_items por ID.
+ */
+async function deleteContractItemById(id) {
+  await db.query(
+    `
+        DELETE
+        FROM contract_items
+        WHERE id = ?
+    `,
+    [id]
+  );
+}
+
+/**
  * Lista contratos com resumo para a tela principal.
  */
 async function findAllContractsSummary() {
@@ -310,6 +324,7 @@ module.exports = {
   findContractItemByContractAndItemNo,
   getNextItemNoForContract,
   updateContractItemById,
+  deleteContractItemById,
   findAllContractsSummary,
   findContractByIdWithItems,
   updateContractById,
