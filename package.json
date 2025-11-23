@@ -1,23 +1,16 @@
 {
   "name": "sigecon-server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "API do SIGECON",
+  "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/coder-gabrielsantos/sigecon-server.git"
+    "start": "node src/server.js",
+    "build": "echo \"No build step necessary\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/coder-gabrielsantos/sigecon-server/issues"
-  },
-  "homepage": "https://github.com/coder-gabrielsantos/sigecon-server#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
