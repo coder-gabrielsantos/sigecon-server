@@ -3,6 +3,8 @@ const router = express.Router();
 
 const {
   createOrderHandler,
+  updateOrderHandler,
+  deleteOrderHandler,
   listOrdersHandler,
   getOrderHandler,
   downloadOrderXlsxHandler,
@@ -21,6 +23,12 @@ router.post("/", createOrderHandler);
 
 // GET /orders/:id -> detalhes da ordem
 router.get("/:id", getOrderHandler);
+
+// PUT /orders/:id -> atualizar itens da ordem
+router.put("/:id", updateOrderHandler);
+
+// DELETE /orders/:id -> excluir ordem
+router.delete("/:id", deleteOrderHandler);
 
 // POST /orders/:id/xlsx -> download planilha preenchida
 router.post("/:id/xlsx", downloadOrderXlsxHandler);

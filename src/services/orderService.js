@@ -4,6 +4,9 @@ const {
   findAllOrdersSummary,
   findOrderByIdWithItems,
   findUsedQuantitiesByContractId,
+  updateOrderItemQuantity,
+  updateOrderTotalAmount,
+  deleteOrderById,
 } = require("../db/queries/orders.queries");
 
 const {
@@ -27,13 +30,11 @@ function parseNumber(value) {
   const hasDot = str.includes(".");
 
   if (hasComma && hasDot) {
-    // Formato tipo "1.234,56" → remove pontos (milhar) e troca vírgula por ponto
+    // "1.234,56"
     str = str.replace(/\./g, "").replace(/,/g, ".");
   } else if (hasComma) {
-    // Formato tipo "1234,56" → vírgula é decimal
+    // "1234,56"
     str = str.replace(/,/g, ".");
-  } else {
-    // Só dígitos e (talvez) ponto → assume que o ponto já é decimal ("2737.96")
   }
 
   const num = Number(str);
@@ -41,11 +42,7 @@ function parseNumber(value) {
 }
 
 /**
- * Enriquecer itens da ordem com o itemNo do item do contrato.
- *
- * - Usa order.contractId para buscar o contrato (caso não seja passado).
- * - Para cada item da ordem, se não tiver itemNo, usa o itemNo/item_no
- *   do item do contrato com o mesmo contractItemId.
+ * Usa o contrato para preencher itemNo nos itens da ordem.
  */
 async function enrichOrderItemsWithItemNo(order, existingContract) {
   if (
@@ -71,7 +68,7 @@ async function enrichOrderItemsWithItemNo(order, existingContract) {
   );
 
   const newItems = order.items.map((item) => {
-    // se já veio itemNo do banco, mantém
+    // se já veio itemNo, mantém
     if (item.itemNo !== undefined && item.itemNo !== null) {
       return item;
     }
@@ -101,21 +98,6 @@ async function enrichOrderItemsWithItemNo(order, existingContract) {
 
 /**
  * Cria uma ordem a partir de um contrato e itens selecionados.
- *
- * payload:
- * {
- *   contractId,
- *   orderType,
- *   orderNumber?,
- *   issueDate?,
- *   referencePeriod?,
- *   justification?,
- *   items: [{ contractItemId, quantity }]
- * }
- *
- * ownerAdminId:
- *   - se ADMIN, é o id do admin
- *   - se OPERADOR, é o id do admin ao qual ele está vinculado
  */
 async function createOrder(payload = {}, ownerAdminId) {
   if (!ownerAdminId) {
@@ -131,7 +113,7 @@ async function createOrder(payload = {}, ownerAdminId) {
     throw err;
   }
 
-  // Garante que o contrato pertence a esse admin (ou ao admin do operador)
+  // Garante que o contrato pertence a esse admin
   const contract = await findContractByIdWithItems(contractIdNum, ownerAdminId);
   if (!contract) {
     const err = new Error(
@@ -168,16 +150,12 @@ async function createOrder(payload = {}, ownerAdminId) {
       ? String(payload.justification || "").trim() || null
       : null;
 
-  // ------------------------------------------------------
-  // 1) Mapa de itens do contrato
-  // ------------------------------------------------------
+  // Mapa de itens do contrato
   const itemsById = new Map(
     (contract.items || []).map((it) => [Number(it.id), it])
   );
 
-  // ------------------------------------------------------
-  // 2) Quantidade já consumida por item deste contrato
-  // ------------------------------------------------------
+  // Quantidade já consumida por item do contrato
   const usedRows = await findUsedQuantitiesByContractId(contractIdNum);
   const usedMap = new Map(
     usedRows.map((r) => [
@@ -186,9 +164,6 @@ async function createOrder(payload = {}, ownerAdminId) {
     ])
   );
 
-  // ------------------------------------------------------
-  // 3) Montar itens da ordem com validação de quantidade
-  // ------------------------------------------------------
   const orderItems = [];
   let totalAmount = 0;
 
@@ -202,7 +177,6 @@ async function createOrder(payload = {}, ownerAdminId) {
     const q = parseNumber(raw.quantity);
     if (!q || q <= 0) continue;
 
-    // quantidade definida no contrato para este item
     const contractQuantity = parseNumber(baseItem.quantity);
     if (contractQuantity === null || contractQuantity === undefined) {
       const err = new Error(
@@ -252,9 +226,6 @@ async function createOrder(payload = {}, ownerAdminId) {
     throw err;
   }
 
-  // ------------------------------------------------------
-  // 4) Criar ordem e salvar itens
-  // ------------------------------------------------------
   const orderId = await insertOrder({
     contractId: contractIdNum,
     orderType,
@@ -269,11 +240,9 @@ async function createOrder(payload = {}, ownerAdminId) {
     orderId,
     ...it,
   }));
-
   await bulkInsertOrderItems(itemsToInsert);
 
   let created = await findOrderByIdWithItems(orderId, ownerAdminId);
-  // garante itemNo também logo após criar
   created = await enrichOrderItemsWithItemNo(created, contract);
 
   return {
@@ -287,6 +256,197 @@ async function createOrder(payload = {}, ownerAdminId) {
 }
 
 /**
+ * Atualiza quantidades dos itens da ordem, respeitando limites do contrato.
+ * payload: { items: [{ orderItemId, quantity }] }
+ */
+async function updateOrder(orderId, payload = {}, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
+  const idNum = Number(orderId);
+  if (!idNum || Number.isNaN(idNum)) {
+    const err = new Error("ID de ordem inválido.");
+    err.status = 400;
+    throw err;
+  }
+
+  const order = await findOrderByIdWithItems(idNum, ownerAdminId);
+  if (!order) {
+    const err = new Error("Ordem não encontrada.");
+    err.status = 404;
+    throw err;
+  }
+
+  if (!order.contractId) {
+    const err = new Error("Ordem não possui contrato vinculado.");
+    err.status = 400;
+    throw err;
+  }
+
+  const contract = await findContractByIdWithItems(
+    order.contractId,
+    ownerAdminId
+  );
+  if (!contract) {
+    const err = new Error(
+      "Contrato vinculado à ordem não foi encontrado ou não pertence ao seu administrador."
+    );
+    err.status = 404;
+    throw err;
+  }
+
+  const itemsPayload = Array.isArray(payload.items) ? payload.items : [];
+  if (!itemsPayload.length) {
+    const err = new Error(
+      "Informe ao menos um item com quantidade para atualizar."
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  const orderItemsById = new Map(
+    (order.items || []).map((it) => [Number(it.id), it])
+  );
+  const contractItemsById = new Map(
+    (contract.items || []).map((ci) => [Number(ci.id), ci])
+  );
+
+  // quanto já foi usado (todas as ordens) por item do contrato
+  const usedRows = await findUsedQuantitiesByContractId(order.contractId);
+  const usedMap = new Map(
+    usedRows.map((r) => [
+      Number(r.contractItemId),
+      parseNumber(r.totalUsed) || 0,
+    ])
+  );
+
+  // valida cada item e prepara updates
+  for (const raw of itemsPayload) {
+    const orderItemId = Number(raw.orderItemId);
+    if (!orderItemId || Number.isNaN(orderItemId)) {
+      const err = new Error("ID de item da ordem inválido.");
+      err.status = 400;
+      throw err;
+    }
+
+    const baseOrderItem = orderItemsById.get(orderItemId);
+    if (!baseOrderItem) {
+      const err = new Error(
+        `Item da ordem (ID ${orderItemId}) não pertence a esta ordem.`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const newQty = parseNumber(raw.quantity);
+    if (!newQty || newQty <= 0) {
+      const err = new Error(
+        `Quantidade inválida para o item da ordem (ID ${orderItemId}).`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const contractItemId = Number(baseOrderItem.contractItemId);
+    if (!contractItemId || Number.isNaN(contractItemId)) {
+      const err = new Error(
+        `Item da ordem (ID ${orderItemId}) não está vinculado corretamente a um item de contrato.`
+      );
+      err.status = 500;
+      throw err;
+    }
+
+    const contractItem = contractItemsById.get(contractItemId);
+    if (!contractItem) {
+      const err = new Error(
+        `Item de contrato (ID ${contractItemId}) não encontrado para validação.`
+      );
+      err.status = 500;
+      throw err;
+    }
+
+    const contractQuantity = parseNumber(contractItem.quantity);
+    if (contractQuantity === null || contractQuantity === undefined) {
+      const err = new Error(
+        `Item de contrato (ID ${contractItemId}) não possui quantidade definida.`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const totalUsedAll = usedMap.get(contractItemId) || 0;
+    const currentOrderQty = parseNumber(baseOrderItem.quantity) || 0;
+    const usedExcludingThis = totalUsedAll - currentOrderQty;
+    const newTotalUsed = usedExcludingThis + newQty;
+
+    if (newTotalUsed > contractQuantity) {
+      const available = contractQuantity - usedExcludingThis;
+      const err = new Error(
+        `Quantidade (${newQty}) excede o disponível (${available}) para o item do contrato (ID ${contractItemId}).`
+      );
+      err.status = 400;
+      throw err;
+    }
+
+    const unitPrice = parseNumber(
+      baseOrderItem.unitPrice ??
+      baseOrderItem.unit_price ??
+      contractItem.unitPrice ??
+      contractItem.unit_price
+    );
+    const totalPrice = (newQty || 0) * (unitPrice || 0);
+
+    await updateOrderItemQuantity(orderItemId, newQty, totalPrice);
+  }
+
+  // recalcula total da ordem com base em todos os itens
+  const updated = await findOrderByIdWithItems(idNum, ownerAdminId);
+  let totalAmount = 0;
+  for (const it of updated.items || []) {
+    const q = parseNumber(it.quantity);
+    const up = parseNumber(it.unitPrice ?? it.unit_price);
+    if (!q || q <= 0 || !up) continue;
+    totalAmount += q * up;
+  }
+  await updateOrderTotalAmount(idNum, totalAmount);
+
+  let finalOrder = await findOrderByIdWithItems(idNum, ownerAdminId);
+  finalOrder = await enrichOrderItemsWithItemNo(finalOrder, contract);
+
+  return finalOrder;
+}
+
+/**
+ * Exclui uma ordem (do admin dono).
+ */
+async function deleteOrder(orderId, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
+  const idNum = Number(orderId);
+  if (!idNum || Number.isNaN(idNum)) {
+    const err = new Error("ID de ordem inválido.");
+    err.status = 400;
+    throw err;
+  }
+
+  const existing = await findOrderByIdWithItems(idNum, ownerAdminId);
+  if (!existing) {
+    const err = new Error("Ordem não encontrada.");
+    err.status = 404;
+    throw err;
+  }
+
+  await deleteOrderById(idNum);
+}
+
+/**
  * Lista ordens visíveis para o admin/operador (filtradas pelo admin dono).
  */
 async function listOrders(ownerAdminId) {
@@ -296,7 +456,6 @@ async function listOrders(ownerAdminId) {
     throw err;
   }
 
-  // já retorna totalAmount + totalItems + dados de contrato
   return findAllOrdersSummary(ownerAdminId);
 }
 
@@ -317,9 +476,7 @@ async function getOrderById(id, ownerAdminId) {
     throw err;
   }
 
-  // preenche itemNo para cada item, se possível
   order = await enrichOrderItemsWithItemNo(order);
-
   return order;
 }
 
@@ -362,7 +519,6 @@ async function getOrderWithContract(id, ownerAdminId) {
     throw err;
   }
 
-  // reaproveita o contrato já carregado pra preencher os itemNo
   order = await enrichOrderItemsWithItemNo(order, contract);
 
   return { order, contract };
@@ -370,6 +526,8 @@ async function getOrderWithContract(id, ownerAdminId) {
 
 module.exports = {
   createOrder,
+  updateOrder,
+  deleteOrder,
   listOrders,
   getOrderById,
   getOrderWithContract,

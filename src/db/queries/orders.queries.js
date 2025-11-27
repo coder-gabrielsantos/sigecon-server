@@ -61,7 +61,6 @@ async function bulkInsertOrderItems(items) {
 
 /**
  * Lista ordens com um resumo + dados do contrato.
- * Agora inclui também totalItems (soma das quantidades da ordem).
  *
  * Se adminId for informado, filtra pelas ordens cujos contratos pertencem
  * a esse admin.
@@ -77,7 +76,7 @@ async function findAllOrdersSummary(adminId) {
 
   const [rows] = await db.query(
     `
-        SELECT 
+        SELECT
             o.id,
             o.order_number                 AS orderNumber,
             o.order_type                   AS orderType,
@@ -88,15 +87,15 @@ async function findAllOrdersSummary(adminId) {
             c.number                       AS contractNumber,
             c.supplier                     AS supplier
         FROM orders o
-        JOIN contracts c ON c.id = o.contract_id
-        LEFT JOIN (
-            SELECT 
+                 JOIN contracts c ON c.id = o.contract_id
+                 LEFT JOIN (
+            SELECT
                 order_id,
                 SUM(quantity) AS totalItems
             FROM order_items
             GROUP BY order_id
         ) oi_tot ON oi_tot.order_id = o.id
-        ${whereClause}
+            ${whereClause}
         ORDER BY o.created_at DESC, o.id DESC
     `,
     params
@@ -107,8 +106,7 @@ async function findAllOrdersSummary(adminId) {
 
 /**
  * Busca uma ordem + itens.
- * Agora aceita adminId: se informado, só retorna se a ordem pertencer
- * a um contrato cujo admin_id = adminId.
+ * Se adminId for informado, garante que o contrato pertence a esse admin.
  */
 async function findOrderByIdWithItems(id, adminId) {
   const params = [id];
@@ -147,7 +145,7 @@ async function findOrderByIdWithItems(id, adminId) {
 
   const [items] = await db.query(
     `
-        SELECT 
+        SELECT
             oi.id,
             oi.contract_item_id AS contractItemId,
             oi.description      AS description,
@@ -162,16 +160,9 @@ async function findOrderByIdWithItems(id, adminId) {
     [order.id]
   );
 
-  // calcula totalItems (soma das quantidades)
-  const totalItems = items.reduce(
-    (sum, it) => sum + (Number(it.quantity) || 0),
-    0
-  );
-
   return {
     ...order,
     items,
-    totalItems,
   };
 }
 
@@ -196,10 +187,54 @@ async function findUsedQuantitiesByContractId(contractId) {
   return rows;
 }
 
+/**
+ * Atualiza quantidade e total de um item de ordem.
+ */
+async function updateOrderItemQuantity(orderItemId, quantity, totalPrice) {
+  await db.query(
+    `
+      UPDATE order_items
+      SET quantity = ?, total_price = ?
+      WHERE id = ?
+    `,
+    [quantity, totalPrice, orderItemId]
+  );
+}
+
+/**
+ * Atualiza o total da ordem (total_amount).
+ */
+async function updateOrderTotalAmount(orderId, totalAmount) {
+  await db.query(
+    `
+      UPDATE orders
+      SET total_amount = ?
+      WHERE id = ?
+    `,
+    [totalAmount, orderId]
+  );
+}
+
+/**
+ * Exclui uma ordem. (order_items serão apagados via ON DELETE CASCADE)
+ */
+async function deleteOrderById(orderId) {
+  await db.query(
+    `
+      DELETE FROM orders
+      WHERE id = ?
+    `,
+    [orderId]
+  );
+}
+
 module.exports = {
   insertOrder,
   bulkInsertOrderItems,
   findAllOrdersSummary,
   findOrderByIdWithItems,
   findUsedQuantitiesByContractId,
+  updateOrderItemQuantity,
+  updateOrderTotalAmount,
+  deleteOrderById,
 };

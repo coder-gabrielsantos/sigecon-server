@@ -1,5 +1,7 @@
 const {
   createOrder,
+  updateOrder,
+  deleteOrder,
   listOrders,
   getOrderById,
   getOrderWithContract,
@@ -47,6 +49,35 @@ async function createOrderHandler(req, res, next) {
 }
 
 /**
+ * PUT /orders/:id
+ * Atualiza quantidades dos itens da ordem.
+ */
+async function updateOrderHandler(req, res, next) {
+  try {
+    const ownerAdminId = getOwnerAdminId(req);
+    const { id } = req.params;
+    const order = await updateOrder(id, req.body || {}, ownerAdminId);
+    return res.json(order);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /orders/:id
+ */
+async function deleteOrderHandler(req, res, next) {
+  try {
+    const ownerAdminId = getOwnerAdminId(req);
+    const { id } = req.params;
+    await deleteOrder(id, ownerAdminId);
+    return res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * GET /orders
  */
 async function listOrdersHandler(req, res, next) {
@@ -75,22 +106,15 @@ async function getOrderHandler(req, res, next) {
 
 /**
  * POST /orders/:id/xlsx
- * - Busca dados da ordem + contrato
- * - Gera o XLSX usando o gerador separado
- * - Faz o streaming do XLSX para o cliente
  */
 async function downloadOrderXlsxHandler(req, res, next) {
   try {
     const { id } = req.params;
     const ownerAdminId = getOwnerAdminId(req);
 
-    // 1) ordem + contrato + itens (respeitando admin / operador)
     const { order, contract } = await getOrderWithContract(id, ownerAdminId);
-
-    // 2) extras vindos do form
     const extras = req.body || {};
 
-    // 3) gera workbook com extras
     const workbook = await generateOrderWorkbook({
       order,
       contract,
@@ -118,6 +142,8 @@ async function downloadOrderXlsxHandler(req, res, next) {
 
 module.exports = {
   createOrderHandler,
+  updateOrderHandler,
+  deleteOrderHandler,
   listOrdersHandler,
   getOrderHandler,
   downloadOrderXlsxHandler,
