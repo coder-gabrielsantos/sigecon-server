@@ -1,18 +1,18 @@
-const { loginWithCPFAndPassword } = require("../services/authService");
+const { loginWithCNPJAndPassword } = require("../services/authService");
 
 /**
  * POST /auth/login
- * body: { cpf, senha }
+ * body: { cnpj, senha }
  */
 async function login(req, res, next) {
   try {
-    const { cpf, senha } = req.body;
+    const { cnpj, senha } = req.body;
 
-    if (!cpf || !senha) {
-      return res.status(400).json({ error: "CPF e senha são obrigatórios" });
+    if (!cnpj || !senha) {
+      return res.status(400).json({ error: "CNPJ e senha são obrigatórios" });
     }
 
-    const result = await loginWithCPFAndPassword(cpf, senha);
+    const result = await loginWithCNPJAndPassword(cnpj, senha);
 
     return res.status(200).json(result);
   } catch (err) {
@@ -21,5 +21,5 @@ async function login(req, res, next) {
 }
 
 module.exports = {
-  login
+  login,
 };

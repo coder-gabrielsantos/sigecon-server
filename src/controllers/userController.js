@@ -8,22 +8,24 @@ const {
 
 /**
  * POST /usuarios
- * BODY: { nome, cpf, role }
- * Apenas ADMIN
+ * BODY: { nome, cnpj, role }
+ * Apenas ADMIN pode criar novos usuários
  */
 async function createUserController(req, res, next) {
   try {
-    const { nome, cpf, role } = req.body;
+    const { nome, cnpj, role } = req.body;
 
-    if (!nome || !cpf || !role) {
-      return res
-        .status(400)
-        .json({ error: "nome, cpf e role são obrigatórios" });
-    }
+    // admin criador sempre vem de req.user
+    const creatorAdminId = req.user.id;
 
-    const novoUsuario = await adminCreateUser({ nome, cpf, role });
+    const result = await adminCreateUser({
+      nome,
+      cnpj,
+      role,
+      creatorAdminId,
+    });
 
-    return res.status(201).json(novoUsuario);
+    return res.status(201).json(result);
   } catch (err) {
     next(err);
   }
@@ -50,7 +52,6 @@ async function getMeController(req, res, next) {
  */
 async function changePasswordController(req, res, next) {
   try {
-    console.log(req.body);
     const myUserId = req.user.id;
     const { senhaAtual, senhaNova } = req.body;
 

@@ -1,10 +1,11 @@
 const {
   createUser,
-  findUserByCPF,
+  findUserByCNPJ,
   findUserById,
   findUserAuthById,
   updateUserPassword,
   updateUserName,
+  updateUserAdminId,
   listAllUsers,
 } = require("../db/queries/users.queries");
 
@@ -14,17 +15,30 @@ const { ROLE_ADMIN, ROLE_OPERADOR } = require("../utils/roleConstants");
 
 /**
  * ADMIN cria novo usuário (ADMIN ou OPERADOR)
+ *
+ * Parâmetros:
+ * - nome
+ * - cnpj (pode vir mascarado; será normalizado para apenas dígitos)
+ * - role ("ADMIN" ou "OPERADOR")
+ * - creatorAdminId -> id do admin autenticado que está criando o usuário
  */
-async function adminCreateUser({ nome, cpf, role }) {
+async function adminCreateUser({ nome, cnpj, role, creatorAdminId }) {
   if (role !== ROLE_ADMIN && role !== ROLE_OPERADOR) {
     const err = new Error("Role inválida");
     err.status = 400;
     throw err;
   }
 
-  const existing = await findUserByCPF(cpf);
+  const cnpjLimpo = (cnpj || "").replace(/\D/g, "");
+  if (!cnpjLimpo) {
+    const err = new Error("CNPJ é obrigatório");
+    err.status = 400;
+    throw err;
+  }
+
+  const existing = await findUserByCNPJ(cnpjLimpo);
   if (existing) {
-    const err = new Error("Já existe usuário com este CPF");
+    const err = new Error("Já existe usuário com este CNPJ");
     err.status = 409;
     throw err;
   }
@@ -32,18 +46,34 @@ async function adminCreateUser({ nome, cpf, role }) {
   const senhaInicial = generateInitialPassword();
   const senhaHash = await hashPassword(senhaInicial);
 
-  const newUserId = await createUser({
+  // 1) cria o usuário inicialmente com admin_id = null
+  const userId = await createUser({
     nome,
-    cpf,
+    cnpj: cnpjLimpo,
     senhaHash,
     role,
+    adminId: null,
   });
 
+  // 2) define o adminId correto:
+  //    - ADMIN   -> aponta para si mesmo
+  //    - OPERADOR -> aponta para o admin criador
+  let adminIdForUser = null;
+
+  if (role === ROLE_ADMIN) {
+    adminIdForUser = userId;
+  } else {
+    adminIdForUser = creatorAdminId;
+  }
+
+  await updateUserAdminId(userId, adminIdForUser);
+
   return {
-    id: newUserId,
+    id: userId,
     nome,
-    cpf,
+    cnpj: cnpjLimpo,
     role,
+    adminId: adminIdForUser,
     senha_inicial: senhaInicial,
   };
 }
@@ -69,10 +99,12 @@ async function getMyProfile(userId) {
   return {
     id: u.id,
     nome: u.nome,
-    cpf: u.cpf,
+    cnpj: u.cnpj,
     role: u.role,
     precisaTrocarSenha: !!u.precisaTrocarSenha,
     ativo: !!u.ativo,
+    adminId: u.adminId ?? null,
+    adminNome: u.adminNome || null,
   };
 }
 
@@ -105,7 +137,6 @@ async function changeMyPassword(userId, senhaAtual, senhaNova) {
   }
 
   const novaHash = await hashPassword(senhaNova);
-
   await updateUserPassword(userId, novaHash, false);
 
   return { success: true };
@@ -139,6 +170,7 @@ async function changeMyName(userId, novoNome) {
 
   await updateUserName(userId, nomeLimpo);
 
+  // devolve perfil atualizado
   return getMyProfile(userId);
 }
 
@@ -150,9 +182,11 @@ async function getAllUsersService() {
   return rows.map((u) => ({
     id: u.id,
     nome: u.nome,
-    cpf: u.cpf,
+    cnpj: u.cnpj,
     role: u.role,
     ativo: !!u.ativo,
+    adminId: u.adminId ?? null,
+    adminNome: u.adminNome || null,
   }));
 }
 

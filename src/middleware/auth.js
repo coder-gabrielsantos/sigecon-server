@@ -1,5 +1,4 @@
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../config/env");
 
 /**
  * requireAuth:
@@ -8,25 +7,25 @@ const { JWT_SECRET } = require("../config/env");
  * - coloca req.user = { id, role }
  */
 function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization || "";
+  const [, token] = authHeader.split(" ");
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Não autenticado" });
+  if (!token) {
+    return res.status(401).json({ error: "Token não fornecido" });
   }
 
-  const token = authHeader.split(" ")[1];
-
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     req.user = {
       id: decoded.userId,
-      role: decoded.role
+      role: decoded.role,
+      adminId: decoded.adminId ?? null,
     };
 
     next();
   } catch (err) {
-    return res.status(401).json({ error: "Sessão inválida" });
+    return res.status(401).json({ error: "Token inválido" });
   }
 }
 

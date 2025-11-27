@@ -45,8 +45,9 @@ function parseNumber(value) {
 
 /**
  * Cria contrato + itens usando o resultado do microserviço extractor.
+ * Agora sempre vinculado a um admin (ownerAdminId).
  */
-async function createContractFromExtract(extractData, fileName) {
+async function createContractFromExtract(extractData, fileName, ownerAdminId) {
   if (!extractData || !Array.isArray(extractData.rows)) {
     const err = new Error("Dados de extração inválidos");
     err.status = 400;
@@ -142,7 +143,7 @@ async function createContractFromExtract(extractData, fileName) {
 
     if (!hasData) continue;
 
-    // ---- NOVO: pular linha de "TOTAL GERAL" do extrator ----
+    // Pular linha de TOTAL GERAL do extrator
     const descUpper = (description || "").toString().trim().toUpperCase();
     const looksLikeTotal =
       descUpper.startsWith("TOTAL") ||
@@ -160,7 +161,6 @@ async function createContractFromExtract(extractData, fileName) {
       console.log("Ignorando linha de TOTAL do extrator:", row);
       continue;
     }
-    // --------------------------------------------------------
 
     items.push({
       contractId: null,
@@ -190,6 +190,7 @@ async function createContractFromExtract(extractData, fileName) {
     pdfPath: safeFileName,
     startDate: null,
     endDate: null,
+    adminId: ownerAdminId ?? null,
   });
 
   const itemsWithContract = items.map((it) => ({
@@ -205,9 +206,12 @@ async function createContractFromExtract(extractData, fileName) {
     `ITENS EXTRAÍDOS: ${rows.length}, ITENS INSERIDOS: ${itemsWithContract.length}`
   );
 
-  return findContractByIdWithItems(contractId);
+  return findContractByIdWithItems(contractId, ownerAdminId ?? null);
 }
 
+/**
+ * Cria um contrato "em branco" (sem PDF) já vinculado ao admin dono.
+ */
 async function createEmptyContract(data = {}) {
   const rawNumber =
     data.number && String(data.number).trim().length
@@ -227,6 +231,7 @@ async function createEmptyContract(data = {}) {
 
   const startDate = data.startDate || null;
   const endDate = data.endDate || null;
+  const adminId = data.adminId ?? null;
 
   // IMPORTANTE: pdf_path não pode ser null na tabela
   const pdfPath = "[CONTRATO EM BRANCO]";
@@ -237,41 +242,88 @@ async function createEmptyContract(data = {}) {
     pdfPath,
     startDate,
     endDate,
+    adminId,
   });
 
-  return findContractByIdWithItems(contractId);
+  return findContractByIdWithItems(contractId, adminId);
 }
 
-async function listContracts() {
-  return findAllContractsSummary();
+/**
+ * Lista contratos APENAS do admin dono.
+ */
+async function listContracts(ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Admin responsável não informado.");
+    err.status = 400;
+    throw err;
+  }
+
+  // findAllContractsSummary deve filtrar por admin_id internamente
+  return findAllContractsSummary(ownerAdminId);
 }
 
-async function getContractById(id) {
-  return findContractByIdWithItems(id);
+/**
+ * Busca contrato por id, garantindo que pertence ao admin dono.
+ */
+async function getContractById(id, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Admin responsável não informado.");
+    err.status = 400;
+    throw err;
+  }
+
+  return findContractByIdWithItems(id, ownerAdminId);
 }
 
-async function updateContract(id, data) {
+/**
+ * Atualiza contrato, garantindo que pertence ao admin dono.
+ */
+async function updateContract(id, data, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Admin responsável não informado.");
+    err.status = 400;
+    throw err;
+  }
+
+  // Confere se o contrato existe e pertence ao admin
+  const existing = await findContractByIdWithItems(id, ownerAdminId);
+  if (!existing) {
+    const err = new Error("Contrato não encontrado.");
+    err.status = 404;
+    throw err;
+  }
+
   await updateContractById(id, data);
-  return findContractByIdWithItems(id);
+
+  return findContractByIdWithItems(id, ownerAdminId);
 }
 
-async function removeContract(id) {
+/**
+ * Remove contrato do admin dono.
+ */
+async function removeContract(id, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Admin responsável não informado.");
+    err.status = 400;
+    throw err;
+  }
+
+  const existing = await findContractByIdWithItems(id, ownerAdminId);
+  if (!existing) {
+    const err = new Error("Contrato não encontrado.");
+    err.status = 404;
+    throw err;
+  }
+
   await deleteContractById(id);
 }
 
 /**
  * Adiciona ou atualiza um item de contrato.
  *
- * - Se payload.itemNo existe:
- *     - se existir (contract_id, item_no) -> atualiza usando dados atuais para recalcular total
- *     - se não existir -> insere novo item com esse itemNo
- * - Se payload.itemNo não existe:
- *     - insere novo item usando próximo item_no sequencial
- *
- * Sempre que quantidade OU valor unitário forem enviados,
- * o total_price é recalculado usando (quantidade efetiva * unitPrice efetivo).
+ * Agora checa se o contrato pertence ao admin dono.
  */
-async function upsertContractItem(contractId, payload = {}) {
+async function upsertContractItem(contractId, payload = {}, ownerAdminId) {
   const idNum = Number(contractId);
   if (!idNum || Number.isNaN(idNum)) {
     const err = new Error("ID de contrato inválido.");
@@ -279,7 +331,7 @@ async function upsertContractItem(contractId, payload = {}) {
     throw err;
   }
 
-  const contract = await findContractByIdWithItems(idNum);
+  const contract = await findContractByIdWithItems(idNum, ownerAdminId);
   if (!contract) {
     const err = new Error("Contrato não encontrado.");
     err.status = 404;
@@ -337,7 +389,7 @@ async function upsertContractItem(contractId, payload = {}) {
     itemNo = await getNextItemNoForContract(idNum);
   }
 
-  const existing = await findContractItemByContractAndItemNo(
+  const existingItem = await findContractItemByContractAndItemNo(
     idNum,
     itemNo
   );
@@ -347,15 +399,17 @@ async function upsertContractItem(contractId, payload = {}) {
   if (description !== undefined) baseData.description = description;
   if (unit !== undefined) baseData.unit = unit;
 
-  if (existing) {
+  if (existingItem) {
     // ---- ATUALIZAR ITEM EXISTENTE ----
     const existingQuantity =
-      existing.quantity !== null && existing.quantity !== undefined
-        ? parseNumber(existing.quantity)
+      existingItem.quantity !== null &&
+      existingItem.quantity !== undefined
+        ? parseNumber(existingItem.quantity)
         : null;
     const existingUnitPrice =
-      existing.unitPrice !== null && existing.unitPrice !== undefined
-        ? parseNumber(existing.unitPrice)
+      existingItem.unitPrice !== null &&
+      existingItem.unitPrice !== undefined
+        ? parseNumber(existingItem.unitPrice)
         : null;
 
     // Quantidade e valor unitário efetivos (payload > banco)
@@ -385,7 +439,7 @@ async function upsertContractItem(contractId, payload = {}) {
       baseData.totalPrice = effectiveQuantity * effectiveUnitPrice;
     }
 
-    await updateContractItemById(existing.id, baseData);
+    await updateContractItemById(existingItem.id, baseData);
   } else {
     // ---- INSERIR NOVO ITEM ----
     const newQuantity =
@@ -417,14 +471,14 @@ async function upsertContractItem(contractId, payload = {}) {
   }
 
   // Retorna contrato completo atualizado
-  return findContractByIdWithItems(idNum);
+  return findContractByIdWithItems(idNum, ownerAdminId);
 }
 
 /**
  * Remove um item específico de um contrato dado o itemNo.
  * Retorna o contrato atualizado após a remoção.
  */
-async function deleteContractItem(contractId, itemNoRaw) {
+async function deleteContractItem(contractId, itemNoRaw, ownerAdminId) {
   const idNum = Number(contractId);
   if (!idNum || Number.isNaN(idNum)) {
     const err = new Error("ID de contrato inválido.");
@@ -439,23 +493,26 @@ async function deleteContractItem(contractId, itemNoRaw) {
     throw err;
   }
 
-  const contract = await findContractByIdWithItems(idNum);
+  const contract = await findContractByIdWithItems(idNum, ownerAdminId);
   if (!contract) {
     const err = new Error("Contrato não encontrado.");
     err.status = 404;
     throw err;
   }
 
-  const existing = await findContractItemByContractAndItemNo(idNum, itemNo);
-  if (!existing) {
+  const existingItem = await findContractItemByContractAndItemNo(
+    idNum,
+    itemNo
+  );
+  if (!existingItem) {
     const err = new Error("Item não encontrado para este contrato.");
     err.status = 404;
     throw err;
   }
 
-  await deleteContractItemById(existing.id);
+  await deleteContractItemById(existingItem.id);
 
-  return findContractByIdWithItems(idNum);
+  return findContractByIdWithItems(idNum, ownerAdminId);
 }
 
 module.exports = {

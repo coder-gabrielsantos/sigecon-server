@@ -2,7 +2,7 @@ const db = require("../../config/db");
 
 /**
  * Cria um contrato na tabela 'contracts'.
- * Agora sem o campo total_amount.
+ * Agora sem o campo total_amount e com vínculo ao admin (admin_id).
  */
 async function createContract({
                                 number,
@@ -10,14 +10,15 @@ async function createContract({
                                 pdfPath,
                                 startDate = null,
                                 endDate = null,
+                                adminId = null,
                               }) {
   const [result] = await db.query(
     `
         INSERT INTO contracts
-            (number, supplier, pdf_path, start_date, end_date)
-        VALUES (?, ?, ?, ?, ?)
+            (number, supplier, pdf_path, start_date, end_date, admin_id)
+        VALUES (?, ?, ?, ?, ?, ?)
     `,
-    [number, supplier, pdfPath, startDate, endDate]
+    [number, supplier, pdfPath, startDate, endDate, adminId]
   );
 
   return result.insertId;
@@ -184,8 +185,17 @@ async function deleteContractItemById(id) {
 
 /**
  * Lista contratos com resumo para a tela principal.
+ * Agora filtrando por admin (admin_id).
  */
-async function findAllContractsSummary() {
+async function findAllContractsSummary(adminId) {
+  const params = [];
+  let whereClause = "";
+
+  if (adminId != null) {
+    whereClause = "WHERE c.admin_id = ?";
+    params.push(adminId);
+  }
+
   const [rows] = await db.query(
     `
         SELECT c.id,
@@ -195,27 +205,41 @@ async function findAllContractsSummary() {
                COALESCE(o_tot.usedAmount, 0)                                   AS usedAmount,
                COALESCE(ci_tot.totalAmount, 0) - COALESCE(o_tot.usedAmount, 0) AS remainingAmount
         FROM contracts c
-                 LEFT JOIN (SELECT contract_id,
-                                   SUM(total_price) AS totalAmount
-                            FROM contract_items
-                            WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
-                            GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
-                 LEFT JOIN (SELECT o.contract_id,
-                                   SUM(oi.total_price) AS usedAmount
-                            FROM orders o
-                                     JOIN order_items oi ON oi.order_id = o.id
-                            GROUP BY o.contract_id) o_tot ON o_tot.contract_id = c.id
+                 LEFT JOIN (
+                     SELECT contract_id,
+                            SUM(total_price) AS totalAmount
+                     FROM contract_items
+                     WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
+                     GROUP BY contract_id
+                 ) ci_tot ON ci_tot.contract_id = c.id
+                 LEFT JOIN (
+                     SELECT o.contract_id,
+                            SUM(oi.total_price) AS usedAmount
+                     FROM orders o
+                              JOIN order_items oi ON oi.order_id = o.id
+                     GROUP BY o.contract_id
+                 ) o_tot ON o_tot.contract_id = c.id
+        ${whereClause}
         ORDER BY c.created_at DESC
-    `
+    `,
+    params
   );
 
   return rows;
 }
 
 /**
- * Busca contrato + itens.
+ * Busca contrato + itens, garantindo (opcionalmente) que pertence ao admin.
  */
-async function findContractByIdWithItems(id) {
+async function findContractByIdWithItems(id, adminId) {
+  const params = [id];
+  let whereAdmin = "";
+
+  if (adminId != null) {
+    whereAdmin = " AND c.admin_id = ?";
+    params.push(adminId);
+  }
+
   // contrato + totais (valor total, usado e saldo)
   const [contracts] = await db.query(
     `
@@ -230,19 +254,24 @@ async function findContractByIdWithItems(id) {
                COALESCE(o_tot.usedAmount, 0)                                   AS usedAmount,
                COALESCE(ci_tot.totalAmount, 0) - COALESCE(o_tot.usedAmount, 0) AS remainingAmount
         FROM contracts c
-                 LEFT JOIN (SELECT contract_id,
-                                   SUM(total_price) AS totalAmount
-                            FROM contract_items
-                            WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
-                            GROUP BY contract_id) ci_tot ON ci_tot.contract_id = c.id
-                 LEFT JOIN (SELECT o.contract_id,
-                                   SUM(oi.total_price) AS usedAmount
-                            FROM orders o
-                                     JOIN order_items oi ON oi.order_id = o.id
-                            GROUP BY o.contract_id) o_tot ON o_tot.contract_id = c.id
-        WHERE c.id = ? LIMIT 1
+                 LEFT JOIN (
+            SELECT contract_id,
+                   SUM(total_price) AS totalAmount
+            FROM contract_items
+            WHERE item_no IS NOT NULL -- ignora linha de TOTAL e afins
+            GROUP BY contract_id
+        ) ci_tot ON ci_tot.contract_id = c.id
+                 LEFT JOIN (
+            SELECT o.contract_id,
+                   SUM(oi.total_price) AS usedAmount
+            FROM orders o
+                     JOIN order_items oi ON oi.order_id = o.id
+            GROUP BY o.contract_id
+        ) o_tot ON o_tot.contract_id = c.id
+        WHERE c.id = ?${whereAdmin}
+        LIMIT 1
     `,
-    [id]
+    params
   );
 
   const contract = contracts[0];
@@ -262,11 +291,12 @@ async function findContractByIdWithItems(id) {
                COALESCE(oi_used.totalUsed, 0)                              AS usedQuantity,
                (COALESCE(ci.quantity, 0) - COALESCE(oi_used.totalUsed, 0)) AS availableQuantity
         FROM contract_items ci
-                 LEFT JOIN (SELECT oi.contract_item_id,
-                                   SUM(oi.quantity) AS totalUsed
-                            FROM order_items oi
-                            GROUP BY oi.contract_item_id) oi_used
-                           ON oi_used.contract_item_id = ci.id
+                 LEFT JOIN (
+                     SELECT oi.contract_item_id,
+                            SUM(oi.quantity) AS totalUsed
+                     FROM order_items oi
+                     GROUP BY oi.contract_item_id
+                 ) oi_used ON oi_used.contract_item_id = ci.id
         WHERE ci.contract_id = ?
         ORDER BY ci.item_no ASC, ci.id ASC
     `,

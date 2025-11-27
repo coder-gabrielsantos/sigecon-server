@@ -34,7 +34,6 @@ function parseNumber(value) {
     str = str.replace(/,/g, ".");
   } else {
     // Só dígitos e (talvez) ponto → assume que o ponto já é decimal ("2737.96")
-    // NÃO remove os pontos aqui
   }
 
   const num = Number(str);
@@ -113,8 +112,18 @@ async function enrichOrderItemsWithItemNo(order, existingContract) {
  *   justification?,
  *   items: [{ contractItemId, quantity }]
  * }
+ *
+ * ownerAdminId:
+ *   - se ADMIN, é o id do admin
+ *   - se OPERADOR, é o id do admin ao qual ele está vinculado
  */
-async function createOrder(payload = {}) {
+async function createOrder(payload = {}, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
   const contractIdNum = Number(payload.contractId);
   if (!contractIdNum || Number.isNaN(contractIdNum)) {
     const err = new Error("ID de contrato inválido.");
@@ -122,9 +131,12 @@ async function createOrder(payload = {}) {
     throw err;
   }
 
-  const contract = await findContractByIdWithItems(contractIdNum);
+  // Garante que o contrato pertence a esse admin (ou ao admin do operador)
+  const contract = await findContractByIdWithItems(contractIdNum, ownerAdminId);
   if (!contract) {
-    const err = new Error("Contrato não encontrado.");
+    const err = new Error(
+      "Contrato não encontrado ou não pertence ao seu administrador."
+    );
     err.status = 404;
     throw err;
   }
@@ -260,7 +272,7 @@ async function createOrder(payload = {}) {
 
   await bulkInsertOrderItems(itemsToInsert);
 
-  let created = await findOrderByIdWithItems(orderId);
+  let created = await findOrderByIdWithItems(orderId, ownerAdminId);
   // garante itemNo também logo após criar
   created = await enrichOrderItemsWithItemNo(created, contract);
 
@@ -274,13 +286,31 @@ async function createOrder(payload = {}) {
   };
 }
 
-async function listOrders() {
+/**
+ * Lista ordens visíveis para o admin/operador (filtradas pelo admin dono).
+ */
+async function listOrders(ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
   // já retorna totalAmount + totalItems + dados de contrato
-  return findAllOrdersSummary();
+  return findAllOrdersSummary(ownerAdminId);
 }
 
-async function getOrderById(id) {
-  let order = await findOrderByIdWithItems(id);
+/**
+ * Busca ordem por ID, garantindo que pertence ao admin/operador.
+ */
+async function getOrderById(id, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
+  let order = await findOrderByIdWithItems(id, ownerAdminId);
   if (!order) {
     const err = new Error("Ordem não encontrada.");
     err.status = 404;
@@ -293,7 +323,16 @@ async function getOrderById(id) {
   return order;
 }
 
-async function getOrderWithContract(id) {
+/**
+ * Busca ordem + contrato, garantindo que pertence ao admin/operador.
+ */
+async function getOrderWithContract(id, ownerAdminId) {
+  if (!ownerAdminId) {
+    const err = new Error("Usuário não vinculado a um administrador.");
+    err.status = 403;
+    throw err;
+  }
+
   const orderId = Number(id);
   if (!orderId || Number.isNaN(orderId)) {
     const err = new Error("ID de ordem inválido.");
@@ -301,7 +340,7 @@ async function getOrderWithContract(id) {
     throw err;
   }
 
-  let order = await findOrderByIdWithItems(orderId);
+  let order = await findOrderByIdWithItems(orderId, ownerAdminId);
   if (!order) {
     const err = new Error("Ordem não encontrada.");
     err.status = 404;
@@ -314,9 +353,11 @@ async function getOrderWithContract(id) {
     throw err;
   }
 
-  const contract = await findContractByIdWithItems(order.contractId);
+  const contract = await findContractByIdWithItems(order.contractId, ownerAdminId);
   if (!contract) {
-    const err = new Error("Contrato vinculado à ordem não foi encontrado.");
+    const err = new Error(
+      "Contrato vinculado à ordem não foi encontrado ou não pertence ao seu administrador."
+    );
     err.status = 404;
     throw err;
   }

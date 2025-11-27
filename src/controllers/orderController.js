@@ -6,28 +6,67 @@ const {
 } = require("../services/orderService");
 const { generateOrderWorkbook } = require("../utils/orderGenerator");
 
+/**
+ * Descobre qual é o "admin dono" considerando o usuário autenticado:
+ * - Se for ADMIN → usa o próprio id
+ * - Se for OPERADOR → usa adminId (campo salvo no token)
+ */
+function getOwnerAdminId(req) {
+  const { id, role, adminId } = req.user || {};
+
+  if (!id || !role) {
+    const err = new Error("Usuário não autenticado");
+    err.status = 401;
+    throw err;
+  }
+
+  if (role === "ADMIN") {
+    return id;
+  }
+
+  if (role === "OPERADOR" && adminId) {
+    return adminId;
+  }
+
+  const err = new Error("Usuário não está vinculado a um administrador");
+  err.status = 403;
+  throw err;
+}
+
+/**
+ * POST /orders
+ */
 async function createOrderHandler(req, res, next) {
   try {
-    const order = await createOrder(req.body || {});
+    const ownerAdminId = getOwnerAdminId(req);
+    const order = await createOrder(req.body || {}, ownerAdminId);
     return res.status(201).json(order);
   } catch (err) {
     next(err);
   }
 }
 
+/**
+ * GET /orders
+ */
 async function listOrdersHandler(req, res, next) {
   try {
-    const orders = await listOrders();
+    const ownerAdminId = getOwnerAdminId(req);
+    const orders = await listOrders(ownerAdminId);
     return res.json(orders);
   } catch (err) {
     next(err);
   }
 }
 
+/**
+ * GET /orders/:id
+ */
 async function getOrderHandler(req, res, next) {
   try {
     const { id } = req.params;
-    const order = await getOrderById(id);
+    const ownerAdminId = getOwnerAdminId(req);
+    const order = await getOrderById(id, ownerAdminId);
     return res.json(order);
   } catch (err) {
     next(err);
@@ -35,20 +74,18 @@ async function getOrderHandler(req, res, next) {
 }
 
 /**
- * GET /orders/:id/pdf
+ * POST /orders/:id/xlsx
  * - Busca dados da ordem + contrato
- * - Gera o PDF usando o gerador separado
- * - Faz o streaming do PDF para o cliente
+ * - Gera o XLSX usando o gerador separado
+ * - Faz o streaming do XLSX para o cliente
  */
 async function downloadOrderXlsxHandler(req, res, next) {
   try {
     const { id } = req.params;
+    const ownerAdminId = getOwnerAdminId(req);
 
-    // só pra conferir se está vindo mesmo
-    console.log("BODY XLSX >>>", req.body);
-
-    // 1) ordem + contrato + itens
-    const { order, contract } = await getOrderWithContract(id);
+    // 1) ordem + contrato + itens (respeitando admin / operador)
+    const { order, contract } = await getOrderWithContract(id, ownerAdminId);
 
     // 2) extras vindos do form
     const extras = req.body || {};
