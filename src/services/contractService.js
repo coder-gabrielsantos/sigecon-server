@@ -59,9 +59,6 @@ async function createContractFromExtract(extractData, fileName, ownerAdminId) {
   );
   const rows = extractData.rows || [];
 
-  console.log("EXTRACT COLUMNS:", columns);
-  console.log("EXTRACT FIRST ROW:", rows[0]);
-
   const items = [];
 
   for (const row of rows) {
@@ -173,7 +170,7 @@ async function createContractFromExtract(extractData, fileName, ownerAdminId) {
     });
   }
 
-  const safeFileName = fileName || "contrato_importado.pdf";
+  const safeFileName = fileName || "contrato_importado.xlsx";
 
   const number =
     extractData.number ||
